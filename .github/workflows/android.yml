@@ -69,6 +69,10 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
+          profile: pixel_2
+          disk-size: 2048M
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
