@@ -1,0 +1,114 @@
+package ru.meow.reminder
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
+import org.junit.*
+import org.junit.Assert.*
+import org.junit.runner.RunWith
+import ru.meow.reminder.data.*
+import ru.meow.reminder.reminders.ReminderScheduler
+import java.time.*
+
+@RunWith(AndroidJUnit4::class)
+class StorageTest {
+    private lateinit var db: MeowDatabase
+    private lateinit var repo: Repository
+    @Before fun setup() {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        db = Room.inMemoryDatabaseBuilder(context, MeowDatabase::class.java).build()
+        repo = Repository(db, context.repository.settings)
+    }
+    @After fun close() { db.close() }
+    @Test fun confirmationKeepsAuditAndCancelsRetries() = runBlocking {
+        val dose = DoseOccurrence("d", "s", "m", "Проверка", "2026-01-01T09:00", 100, nextAttemptAt = 999)
+        repo.dao.occurrence(dose)
+        repo.mark("d", "TAKEN")
+        assertEquals("TAKEN", repo.dao.occurrence("d")!!.status)
+        assertNull(repo.dao.occurrence("d")!!.nextAttemptAt)
+        repo.mark("d", "SKIPPED")
+        assertEquals(2, repo.dao.allRecords().size)
+    }
+    @Test fun schedulerIsIdempotentAndDisablePreservesHistory() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val med = MedicationTemplate(name = "Тест", enabled = true)
+        repo.dao.medication(med)
+        repo.saveSchedule(MedicationSchedule(id = "test-schedule", medicationId = med.id, frequency = "DAILY", times = "23:59"))
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.reconcile()
+            val ids = repo.dao.allOccurrences().map { it.id }
+            scheduler.reconcile()
+            assertEquals(ids.toSet(), repo.dao.allOccurrences().map { it.id }.toSet())
+            val dose = repo.dao.allOccurrences().first()
+            repo.mark(dose.id, "TAKEN")
+            repo.dao.medication(med.copy(enabled = false))
+            scheduler.reconcile()
+            assertEquals("TAKEN", repo.dao.occurrence(dose.id)!!.status)
+            assertTrue(repo.dao.allOccurrences().none { !it.cancelled && it.status == "PENDING" })
+        } finally { scheduler.cancelAll() }
+    }
+    @Test fun importMergeDoesNotDuplicateAndNotesKeepLongText() = runBlocking {
+        val med = MedicationTemplate(name = "Проверка")
+        repo.dao.medication(med)
+        repo.dao.note(Note(title = "Длинная заметка", body = "мур ".repeat(20000)))
+        val backup = repo.backup()
+        repo.importBackup(backup, false)
+        repo.importBackup(backup, false)
+        assertEquals(1, repo.dao.allMedications().size)
+        assertEquals(80000, repo.dao.allNotes().single().body.length)
+    }
+    @Test fun scheduleEditDoesNotEraseConfirmedHistory() = runBlocking {
+        val med = MedicationTemplate(name = "Проверка")
+        repo.dao.medication(med)
+        val schedule = MedicationSchedule(medicationId = med.id)
+        repo.saveSchedule(schedule)
+        repo.dao.occurrence(DoseOccurrence("old", schedule.id, med.id, med.name, "2026-01-01T09:00", 100, status = "TAKEN"))
+        repo.saveSchedule(schedule.copy(times = "18:30"))
+        assertEquals("TAKEN", repo.dao.occurrence("old")!!.status)
+        repo.dao.medication(med.copy(archived = true))
+        assertNotNull(repo.dao.occurrence("old"))
+    }
+    @Test fun snoozeBelongsToDoseAndDoesNotMoveBaseSchedule() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val med = MedicationTemplate(name = "Отсрочка", enabled = true)
+        val schedule = MedicationSchedule(medicationId = med.id, frequency = "DAILY", times = "22:45")
+        repo.dao.medication(med)
+        repo.saveSchedule(schedule)
+        val now = System.currentTimeMillis()
+        val dose = DoseOccurrence("snoozed", schedule.id, med.id, med.name, LocalDateTime.now().toString(), now, notified = true)
+        repo.dao.occurrence(dose)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.snooze(dose.id, 15)
+            val postponed = repo.dao.occurrence(dose.id)!!
+            assertTrue(postponed.nextAttemptAt!! >= now + 15 * 60000)
+            assertEquals("SNOOZE", postponed.nextAttemptKind)
+            assertEquals("22:45", repo.dao.allSchedules().single().times)
+            scheduler.mark(dose.id, "SKIPPED")
+            assertNull(repo.dao.occurrence(dose.id)!!.nextAttemptAt)
+        } finally { scheduler.cancelAll() }
+    }
+    @Test fun duplicateBroadcastDoesNotSendAnotherRepeat() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val med = MedicationTemplate(name = "Повторы", enabled = true)
+        val schedule = MedicationSchedule(medicationId = med.id, repeatNotification = true, extraNotifications = 2)
+        repo.dao.medication(med)
+        repo.saveSchedule(schedule)
+        val now = System.currentTimeMillis()
+        val dose = DoseOccurrence("repeat-dose", schedule.id, med.id, med.name, LocalDateTime.now().toString(), now)
+        repo.dao.occurrence(dose)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.fire(dose.id, now)
+            val first = repo.dao.occurrence(dose.id)!!
+            assertTrue(first.notified)
+            assertNotNull(first.nextAttemptAt)
+            scheduler.fire(dose.id, now)
+            assertEquals(first, repo.dao.occurrence(dose.id))
+            scheduler.mark(dose.id, "TAKEN")
+            assertNull(repo.dao.occurrence(dose.id)!!.nextAttemptAt)
+        } finally { scheduler.cancelAll() }
+    }
+}

@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Meow" parent="Base.Theme.Meow">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cat_icon</item>
+        <item name="android:windowSplashScreenBackground">#FAF8F6</item>
+    </style>
+</resources>
