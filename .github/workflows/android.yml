@@ -12,15 +12,17 @@ concurrency:
 jobs:
   build:
     name: Проверка и debug APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - name: Установить Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
@@ -44,16 +46,18 @@ jobs:
           echo 'Скачайте **meow-reminder-debug-apk** в разделе Artifacts этого запуска. Это тестовая сборка, подписанная debug-ключом.' >> "$GITHUB_STEP_SUMMARY"
   instrumented:
     name: Android UI и Room
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - name: Разрешить KVM
         run: |
