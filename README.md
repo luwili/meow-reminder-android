@@ -8,6 +8,8 @@
 
 <img src="docs/screenshots/welcome.png" width="240" alt="Приветствие с котиком и таблеткой" /> <img src="docs/screenshots/today.png" width="240" alt="Сегодня: фраза, дата и навигация" />
 
+<img src="docs/screenshots/library.png" width="240" alt="Сохранённые препараты без активных напоминаний" /> <img src="docs/screenshots/today-dark.png" width="240" alt="Тёмная тема приложения" />
+
 ## Возможности
 
 - Jetpack Compose / Material 3, системные цвета Material You на Android 12+, светлая/тёмная/системная тема, четыре ручных акцента.
@@ -25,7 +27,9 @@
 
 ## Получить APK
 
-В GitHub откройте **Actions → Android · APK и тесты → успешный запуск → Artifacts → meow-reminder-debug-apk**. Распакуйте ZIP и установите `app-debug.apk`. Для скачивания из приватного репозитория нужна авторизация владельца/участника.
+Первая проверенная тестовая сборка: [скачать APK из Releases](https://github.com/luwili/meow-reminder-android/releases/tag/v1.0.0-debug). Репозиторий приватный: войдите в свой аккаунт GitHub.
+
+Последующие автоматические сборки: **Actions → Android · APK и тесты → успешный запуск → Artifacts → meow-reminder-debug-apk**. Распакуйте ZIP и установите `app-debug.apk`. Для скачивания из приватного репозитория нужна авторизация владельца/участника.
 
 Либо после `gh auth login`: `bash scripts/get-apk.sh` (скачивает APK последней успешной сборки).
 
