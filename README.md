@@ -27,9 +27,9 @@
 
 ## Получить APK
 
-Первая проверенная тестовая сборка: [скачать APK из Releases](https://github.com/luwili/meow-reminder-android/releases/tag/v1.0.0-debug). Репозиторий приватный: войдите в свой аккаунт GitHub.
+Первая проверенная тестовая сборка: [скачать APK напрямую](https://github.com/luwili/meow-reminder-android/releases/download/v1.0.0-debug/meow-reminder-1.0.0-debug.apk) или [открыть Releases](https://github.com/luwili/meow-reminder-android/releases/tag/v1.0.0-debug). Репозиторий публичный, APK доступен без авторизации.
 
-Последующие автоматические сборки: **Actions → Android · APK и тесты → успешный запуск → Artifacts → meow-reminder-debug-apk**. Распакуйте ZIP и установите `app-debug.apk`. Для скачивания из приватного репозитория нужна авторизация владельца/участника.
+Последующие автоматические сборки: **Actions → Android · APK и тесты → успешный запуск → Artifacts → meow-reminder-debug-apk**. Распакуйте ZIP и установите `app-debug.apk`. Для скачивания артефактов Actions может потребоваться аккаунт GitHub; APK в Releases доступен без входа.
 
 Либо после `gh auth login`: `bash scripts/get-apk.sh` (скачивает APK последней успешной сборки).
 
