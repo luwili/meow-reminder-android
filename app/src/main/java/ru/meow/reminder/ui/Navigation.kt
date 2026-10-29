@@ -64,8 +64,8 @@ fun MeowNavigation(vm: MeowViewModel) {
         Box(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
             NavHost(nav, startDestination = "today") {
                 composable("today") { TodayScreen(vm, add = { quickMedicationId = null; quickAdd = true }, settings = { nav.navigate("settings") }) }
-                composable("library") { LibraryScreen(vm, edit = { nav.navigate("med/$it") }, remind = { quickMedicationId = it; quickAdd = true }) }
-                composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }, schedule = { nav.navigate("schedule/$it") }) }
+                composable("library") { LibraryScreen(vm, edit = { nav.navigate("med/$it") }) }
+                composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("schedule/{id}") { e -> ScheduleEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("history") { HistoryScreen(vm) }
                 composable("notes") { NotesScreen(vm, edit = { nav.navigate("note/$it") }) }

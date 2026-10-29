@@ -16,6 +16,8 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
     val doses by vm.occurrences.collectAsStateWithLifecycle()
+    val schedules by vm.schedules.collectAsStateWithLifecycle()
+    val meds by vm.medications.collectAsStateWithLifecycle()
     val prefs by vm.settings.collectAsStateWithLifecycle()
     val phrase by vm.homePhrase.collectAsStateWithLifecycle()
     val refreshing by vm.refreshingToday.collectAsStateWithLifecycle()
@@ -27,7 +29,10 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
     }
     val day = doses.filter { Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() == today && (!it.cancelled || it.status != "PENDING") }.sortedBy { it.plannedAt }
     val next = doses.filter { !it.cancelled && it.status == "PENDING" && it.plannedAt > System.currentTimeMillis() }.minByOrNull { it.plannedAt }
+    val upcomingAfterToday = doses.filter { !it.cancelled && it.status == "PENDING" && Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() > today }.sortedBy { it.plannedAt }.take(5)
+    val activeSchedules = schedules.filter { it.enabled }
     val greeting = when (LocalTime.now().hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Тихой ночи" }
+
     Page("Мяу, пора!", actions = { IconButton(onClick = add) { Icon(Icons.Outlined.Add, "Добавить напоминание") } },
         refreshing = refreshing, onRefresh = { today = LocalDate.now(); vm.refreshToday() }) {
         Text(greeting, style = MaterialTheme.typography.headlineLarge)
@@ -41,14 +46,127 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
             }
         }
         PermissionCard(vm, settings)
-        if (next != null) Section("Ближайший приём") {
-            Text(next.medicationName, style = MaterialTheme.typography.titleMedium)
-            Text(Instant.ofEpochMilli(next.plannedAt).atZone(zone).format(dateTimeFormat))
+
+        if (next != null) {
+            var deleteNextDialog by remember { mutableStateOf(false) }
+            var snoozeNext by remember { mutableStateOf(false) }
+            Section("Ближайший приём") {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(next.medicationName, style = MaterialTheme.typography.titleMedium)
+                                Text(Instant.ofEpochMilli(next.plannedAt).atZone(zone).format(dateTimeFormat), style = MaterialTheme.typography.bodyMedium)
+                            }
+                            IconButton(onClick = { deleteNextDialog = true }) {
+                                Icon(Icons.Outlined.Delete, "Удалить напоминание", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilledTonalButton(onClick = { vm.mark(next.id, "TAKEN") }) { Text("Принято") }
+                            IconButton(onClick = { snoozeNext = true }) { Icon(Icons.Outlined.Snooze, "Отложить") }
+                            TextButton(onClick = { vm.mark(next.id, "SKIPPED") }) { Text("Пропустить") }
+                        }
+                    }
+                }
+            }
+            if (snoozeNext) SnoozeDialog(dismiss = { snoozeNext = false }, select = { minutes -> vm.task { vm.app.scheduler.snooze(next.id, minutes) } })
+            if (deleteNextDialog) {
+                AlertDialog(
+                    onDismissRequest = { deleteNextDialog = false },
+                    title = { Text("Удалить напоминание?") },
+                    text = { Text("Удалить напоминание о приёме «${next.medicationName}»?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            vm.deleteOccurrence(next.id)
+                            deleteNextDialog = false
+                        }) {
+                            Text("Удалить этот приём", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        Row {
+                            if (next.scheduleId.isNotBlank()) {
+                                TextButton(onClick = {
+                                    vm.deleteSchedule(next.scheduleId)
+                                    deleteNextDialog = false
+                                }) {
+                                    Text("Отменить всё расписание")
+                                }
+                            }
+                            TextButton(onClick = { deleteNextDialog = false }) {
+                                Text("Отмена")
+                            }
+                        }
+                    }
+                )
+            }
         }
+
         Text(today.format(dayFormat).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge)
-        if (day.isEmpty()) EmptyState("На сегодня всё спокойно", "Добавьте препарат или включите сохранённое расписание.", prefs.cat)
+        if (day.isEmpty()) EmptyState("На сегодня всё спокойно", "Добавьте напоминание или выберите препарат.", prefs.cat)
         day.forEach { dose -> DoseCard(dose, vm, false) }
-        FilledTonalButton(onClick = add, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Добавить напоминание") }
+
+        if (upcomingAfterToday.isNotEmpty()) {
+            Section("Скоро предстоит") {
+                upcomingAfterToday.forEach { dose -> DoseCard(dose, vm, false) }
+            }
+        }
+
+        if (activeSchedules.isNotEmpty()) {
+            Section("Активные расписания") {
+                activeSchedules.forEach { sched ->
+                    var deleteScheduleDialog by remember { mutableStateOf(false) }
+                    val med = meds.find { it.id == sched.medicationId }
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(med?.name ?: sched.label, style = MaterialTheme.typography.titleMedium)
+                                Text("${sched.times.replace(",", ", ")} · ${sched.label}", style = MaterialTheme.typography.bodyMedium)
+                                sched.endDate?.let {
+                                    Text("Курс до $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            IconButton(onClick = { deleteScheduleDialog = true }) {
+                                Icon(Icons.Outlined.Delete, "Удалить расписание", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                    if (deleteScheduleDialog) {
+                        AlertDialog(
+                            onDismissRequest = { deleteScheduleDialog = false },
+                            title = { Text("Удалить расписание?") },
+                            text = { Text("Все будущие напоминания для «${med?.name ?: sched.label}» будут отменены. Прошедшая история приёмов сохранится.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    vm.deleteSchedule(sched.id)
+                                    deleteScheduleDialog = false
+                                }) {
+                                    Text("Удалить", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { deleteScheduleDialog = false }) {
+                                    Text("Отмена")
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        FilledTonalButton(onClick = add, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Icon(Icons.Outlined.Add, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Добавить напоминание")
+        }
     }
 }
 
@@ -56,6 +174,7 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
 fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean) {
     var editing by remember { mutableStateOf(false) }
     var snooze by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     val pendingPast = dose.status == "PENDING" && dose.plannedAt < System.currentTimeMillis()
     val status = when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> if (pendingPast) "Не подтверждено" else "Ожидается" }
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -63,7 +182,13 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(Instant.ofEpochMilli(dose.plannedAt).atZone(ZoneId.systemDefault()).format(timeFormat), style = MaterialTheme.typography.titleLarge)
                 Text(dose.medicationName, modifier = Modifier.weight(1f).padding(start = 16.dp), style = MaterialTheme.typography.titleMedium)
-                if (dose.status == "TAKEN") Icon(Icons.Outlined.CheckCircle, "Принято", tint = MaterialTheme.colorScheme.primary)
+                if (dose.status == "TAKEN") {
+                    Icon(Icons.Outlined.CheckCircle, "Принято", tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(4.dp))
+                }
+                IconButton(onClick = { deleting = true }) {
+                    Icon(Icons.Outlined.Delete, "Удалить напоминание", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             dose.confirmedAt?.let { Text("Отметка: ${Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(dateTimeFormat)}", style = MaterialTheme.typography.bodySmall) }
@@ -82,6 +207,36 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean) {
         } }
     }, confirmButton = { TextButton(onClick = { editing = false }) { Text("Закрыть") } })
     if (snooze) SnoozeDialog(dismiss = { snooze = false }, select = { minutes -> vm.task { vm.app.scheduler.snooze(dose.id, minutes) } })
+    if (deleting) {
+        AlertDialog(
+            onDismissRequest = { deleting = false },
+            title = { Text("Удалить напоминание?") },
+            text = { Text("Удалить напоминание о приёме «${dose.medicationName}»?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteOccurrence(dose.id)
+                    deleting = false
+                }) {
+                    Text("Удалить этот приём", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (dose.scheduleId.isNotBlank()) {
+                        TextButton(onClick = {
+                            vm.deleteSchedule(dose.scheduleId)
+                            deleting = false
+                        }) {
+                            Text("Отменить всё расписание")
+                        }
+                    }
+                    TextButton(onClick = { deleting = false }) {
+                        Text("Отмена")
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable

@@ -50,16 +50,68 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
         }
     }
 
-    suspend fun addQuickReminder(medicationId: String, local: LocalDateTime, frequency: String): MedicationSchedule {
-        require(frequency in setOf("ONCE", "DAILY")) { "Выберите периодичность" }
+    suspend fun deleteOccurrence(id: String) {
+        database.withTransaction {
+            dao.deleteOccurrence(id)
+            dao.deleteRecordsForOccurrence(id)
+        }
+    }
+
+    suspend fun deleteSchedule(id: String) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val schedule = dao.allSchedules().find { it.id == id }
+            dao.clearFuture(id, now)
+            dao.cancelSchedule(id)
+            dao.deleteSchedule(id)
+            if (schedule != null) {
+                val hasOther = dao.allSchedules().any { it.medicationId == schedule.medicationId && it.enabled && it.id != id }
+                if (!hasOther) {
+                    val med = dao.allMedications().find { it.id == schedule.medicationId }
+                    if (med != null && med.enabled) dao.medication(med.copy(enabled = false))
+                }
+            }
+        }
+    }
+
+    suspend fun addQuickReminder(
+        medicationId: String,
+        local: LocalDateTime,
+        frequency: String,
+        interval: Int = 1,
+        durationDays: Int? = null
+    ): MedicationSchedule {
+        require(frequency in setOf("ONCE", "DAILY", "WEEKLY")) { "Выберите периодичность" }
+        require(interval in 1..99) { "Интервал должен быть от 1 до 99" }
+        require(durationDays == null || durationDays in 1..3650) { "Количество дней должно быть от 1 до 3650" }
         require(local.second == 0 && local.nano == 0) { "Выберите время с точностью до минуты" }
         require(local > LocalDateTime.now()) { "Выберите будущее время напоминания" }
         val prefs = settings.get()
-        val schedule = MedicationSchedule(medicationId = medicationId,
-            label = if (frequency == "ONCE") "Разовое напоминание" else "Ежедневное напоминание",
-            enabled = true, frequency = frequency, startDate = local.toLocalDate().toString(),
+        val startDate = local.toLocalDate()
+        val endDate = if (frequency != "ONCE" && durationDays != null) startDate.plusDays(durationDays - 1L).toString() else null
+        val label = when (frequency) {
+            "ONCE" -> "Разовое напоминание"
+            "WEEKLY" -> if (durationDays != null) "Раз в неделю, $durationDays дн." else "Раз в неделю"
+            else -> if (interval == 2) {
+                if (durationDays != null) "Через день, $durationDays дн." else "Через день"
+            } else if (interval > 1) {
+                if (durationDays != null) "Каждые $interval дн., $durationDays дн." else "Каждые $interval дн."
+            } else {
+                if (durationDays != null) "Каждый день, $durationDays дн." else "Каждый день"
+            }
+        }
+        val schedule = MedicationSchedule(
+            medicationId = medicationId,
+            label = label,
+            enabled = true,
+            frequency = frequency,
+            interval = interval,
+            startDate = startDate.toString(),
+            endDate = endDate,
             times = local.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
-            repeatNotification = prefs.repeatDefault, repeatMinutes = prefs.repeatMinutes)
+            repeatNotification = prefs.repeatDefault,
+            repeatMinutes = prefs.repeatMinutes
+        )
         ScheduleEngine.validate(schedule)
         database.withTransaction {
             val med = dao.allMedications().find { it.id == medicationId }

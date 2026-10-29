@@ -68,12 +68,19 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
             } finally { refreshingToday.value = false }
         }
     }
-    fun addQuickReminder(medicationId: String, local: java.time.LocalDateTime, frequency: String, complete: () -> Unit) {
+    fun addQuickReminder(
+        medicationId: String,
+        local: java.time.LocalDateTime,
+        frequency: String,
+        interval: Int = 1,
+        durationDays: Int? = null,
+        complete: () -> Unit
+    ) {
         if (!quickSaving.compareAndSet(false, true)) return
         quickError.value = null
         task {
             try {
-                repo.addQuickReminder(medicationId, local, frequency)
+                repo.addQuickReminder(medicationId, local, frequency, interval, durationDays)
                 app.scheduler.reconcile()
                 withContext(Dispatchers.Main) { complete() }
             } catch (e: Exception) {
@@ -82,5 +89,18 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
             } finally { quickSaving.value = false }
         }
     }
-    fun deleteSchedule(id: String) = task { repo.dao.cancelSchedule(id); repo.dao.deleteSchedule(id); app.scheduler.reconcile() }
+
+    fun addQuickReminder(medicationId: String, local: java.time.LocalDateTime, frequency: String, complete: () -> Unit) {
+        addQuickReminder(medicationId, local, frequency, 1, null, complete)
+    }
+
+    fun deleteOccurrence(id: String) = task {
+        repo.deleteOccurrence(id)
+        app.scheduler.reconcile()
+    }
+
+    fun deleteSchedule(id: String) = task {
+        repo.deleteSchedule(id)
+        app.scheduler.reconcile()
+    }
 }

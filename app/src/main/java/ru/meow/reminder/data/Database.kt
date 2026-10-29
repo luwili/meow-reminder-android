@@ -25,6 +25,8 @@ interface MeowDao {
     @Upsert suspend fun note(value: Note)
     @Upsert suspend fun phrase(value: CustomPhrase)
     @Query("DELETE FROM schedules WHERE id = :id") suspend fun deleteSchedule(id: String)
+    @Query("DELETE FROM occurrences WHERE id = :id") suspend fun deleteOccurrence(id: String)
+    @Query("DELETE FROM intake_records WHERE occurrenceId = :id") suspend fun deleteRecordsForOccurrence(id: String)
     @Query("DELETE FROM notes WHERE id = :id") suspend fun deleteNote(id: String)
     @Query("DELETE FROM phrases WHERE id = :id") suspend fun deletePhrase(id: String)
     @Query("DELETE FROM occurrences WHERE scheduleId = :id AND plannedAt > :now AND status = 'PENDING'") suspend fun clearFuture(id: String, now: Long)

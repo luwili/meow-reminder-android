@@ -12,3 +12,4 @@ captures/
 apk-download/
 __pycache__/
 *.pyc
+.agents/

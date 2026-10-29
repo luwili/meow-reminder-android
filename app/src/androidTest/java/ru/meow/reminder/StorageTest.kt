@@ -166,4 +166,47 @@ class StorageTest {
         } catch (_: IllegalArgumentException) { }
         assertEquals(1, repo.dao.allSchedules().size)
     }
+    @Test fun deleteOccurrenceRemovesOccurrenceAndAuditRecords() = runBlocking {
+        val med = MedicationTemplate(name = "Для удаления", enabled = true)
+        repo.dao.medication(med)
+        val dose = DoseOccurrence("del-1", "sched-1", med.id, med.name, "2026-01-01T10:00", 100, status = "PENDING")
+        repo.dao.occurrence(dose)
+        repo.mark(dose.id, "TAKEN")
+        assertTrue(repo.dao.allOccurrences().any { it.id == "del-1" })
+        assertTrue(repo.dao.allRecords().any { it.occurrenceId == "del-1" })
+
+        repo.deleteOccurrence("del-1")
+        assertNull(repo.dao.occurrence("del-1"))
+        assertFalse(repo.dao.allRecords().any { it.occurrenceId == "del-1" })
+    }
+    @Test fun deleteScheduleClearsFutureAndCancelsPending() = runBlocking {
+        val med = MedicationTemplate(name = "Для отмены расписания", enabled = true)
+        repo.dao.medication(med)
+        val schedule = MedicationSchedule(id = "sched-to-delete", medicationId = med.id, frequency = "DAILY", times = "09:00")
+        repo.saveSchedule(schedule)
+        val now = System.currentTimeMillis()
+        val pastDose = DoseOccurrence("past", schedule.id, med.id, med.name, "2026-01-01T09:00", now - 100000, status = "TAKEN")
+        val futureDose = DoseOccurrence("future", schedule.id, med.id, med.name, "2026-01-02T09:00", now + 100000, status = "PENDING")
+        repo.dao.occurrence(pastDose)
+        repo.dao.occurrence(futureDose)
+
+        repo.deleteSchedule(schedule.id)
+        assertNull(repo.dao.allSchedules().find { it.id == schedule.id })
+        // Future pending occurrence cleared
+        assertNull(repo.dao.occurrence("future"))
+        // Past taken occurrence kept in history
+        assertNotNull(repo.dao.occurrence("past"))
+    }
+    @Test fun quickReminderWithIntervalAndDurationConfiguresScheduleCorrectly() = runBlocking {
+        val med = MedicationTemplate(name = "Курс через день", enabled = true)
+        repo.dao.medication(med)
+        val local = LocalDateTime.now().plusHours(2).withSecond(0).withNano(0)
+        val schedule = repo.addQuickReminder(med.id, local, "DAILY", interval = 2, durationDays = 10)
+        assertEquals(2, schedule.interval)
+        assertEquals("DAILY", schedule.frequency)
+        assertEquals(local.toLocalDate().toString(), schedule.startDate)
+        assertEquals(local.toLocalDate().plusDays(9).toString(), schedule.endDate)
+        assertTrue(schedule.label.contains("Через день"))
+        assertTrue(schedule.label.contains("10 дн."))
+    }
 }
