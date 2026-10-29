@@ -192,7 +192,11 @@ fun QuickReminderSheet(
                     enabled = time != null && !saving && (periodChoice == "ONCE" || durationChoice != "CUSTOM" || (customDays.toIntOrNull() ?: 0) > 0),
                     onClick = {
                         val parsedTime = LocalTime.parse(time!!)
-                        val targetDateTime = LocalDate.parse(date).atTime(parsedTime)
+                        var targetDateTime = LocalDate.parse(date).atTime(parsedTime)
+                        if (targetDateTime <= java.time.LocalDateTime.now() && date == java.time.LocalDate.now().toString()) {
+                            if (periodChoice == "WEEKLY") targetDateTime = targetDateTime.plusWeeks(1)
+                            else if (periodChoice != "ONCE") targetDateTime = targetDateTime.plusDays(1)
+                        }
                         val freq = when (periodChoice) {
                             "ONCE" -> "ONCE"
                             "WEEKLY" -> "WEEKLY"

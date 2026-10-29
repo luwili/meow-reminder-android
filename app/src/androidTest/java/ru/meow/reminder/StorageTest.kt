@@ -209,4 +209,23 @@ class StorageTest {
         assertTrue(schedule.label.contains("Через день"))
         assertTrue(schedule.label.contains("10 дн."))
     }
+    @Test fun deleteUpcomingOccurrenceDoesNotReappearOnReconcile() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val med = MedicationTemplate(name = "Тест удаления приёма", enabled = true)
+        repo.dao.medication(med)
+        val schedule = MedicationSchedule(id = "sched-del", medicationId = med.id, frequency = "DAILY", times = "23:59")
+        repo.saveSchedule(schedule)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.reconcile()
+            val upcoming = repo.dao.allOccurrences().first { it.scheduleId == schedule.id && it.status == "PENDING" && !it.cancelled }
+            repo.deleteOccurrence(upcoming.id)
+            scheduler.reconcile()
+            val occurrences = repo.dao.allOccurrences()
+            val found = occurrences.find { it.id == upcoming.id && !it.cancelled && it.status == "PENDING" }
+            assertNull("Deleted upcoming occurrence must NOT reappear as pending on reconcile!", found)
+        } finally {
+            scheduler.cancelAll()
+        }
+    }
 }

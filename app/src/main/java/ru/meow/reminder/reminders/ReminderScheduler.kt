@@ -54,7 +54,9 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
             val horizon = today.plusDays(35)
             val generated = if (start.toLocalDate() <= horizon) ScheduleEngine.between(s, start, horizon.atTime(LocalTime.MAX)) else emptyList()
             // Sparse (e.g. annual) rules always keep their next alarm, outside the materialization window too.
-            val next = ScheduleEngine.next(s, Instant.ofEpochMilli(now), zone, 1).map { it.toLocalDateTime() }
+            val next = ScheduleEngine.next(s, Instant.ofEpochMilli(now), zone, 1)
+                .map { it.toLocalDateTime() }
+                .filter { it.toLocalDate() > horizon }
             val med = medications.getValue(s.medicationId)
             repo.dao.insertOccurrences((generated + next).distinct().map { local ->
                 val at = local.atZone(zone).toInstant().toEpochMilli()

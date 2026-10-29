@@ -23,5 +23,5 @@
 
 - `testDebugUnitTest`: **34 теста пройдены**, 0 ошибок.
 - `lintDebug`: завершён без ошибок.
-- `connectedDebugAndroidTest`: **20 тестов пройдены**, 0 ошибок на Android API 29 (`meow-test-api29`).
+- `connectedDebugAndroidTest`: **21 тест пройден**, 0 ошибок на Android API 29 (`meow-test-api29`).
 - `test-upgrade.py`: проверка переходов `1.0.0 → 1.0.4` и `1.0.3 → 1.0.4` подтвердила полную сохранность базы Room и настроек DataStore.
