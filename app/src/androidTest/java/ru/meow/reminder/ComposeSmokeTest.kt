@@ -70,4 +70,35 @@ class ComposeSmokeTest {
         org.junit.Assert.assertEquals(1, runBlocking { app.repository.dao.allSchedules().count { it.medicationId == med.id } })
         runBlocking { app.repository.dao.medication(med.copy(deleted = true)); app.scheduler.reconcile() }
     }
+    @Test fun plannedMedicationCanBeEditedFromMainMenu() {
+        enterHome()
+        val app = compose.activity.application as MeowApp
+        val med = MedicationTemplate(name = "Для проверки ред. ${System.currentTimeMillis()}", enabled = true)
+        val now = java.time.LocalDateTime.now().plusHours(2).withSecond(0).withNano(0)
+        val schedule = runBlocking {
+            app.repository.dao.medication(med)
+            app.repository.addQuickReminder(med.id, now, "DAILY", 1, 7)
+        }
+        val vm = ViewModelProvider(compose.activity)[MeowViewModel::class.java]
+        compose.waitUntil(10000) { vm.schedules.value.any { it.id == schedule.id } }
+        runBlocking { app.scheduler.reconcile() }
+        compose.waitUntil(10000) { vm.occurrences.value.any { it.scheduleId == schedule.id } }
+
+        // Click on edit schedule button for this schedule
+        compose.onNodeWithTag("edit-schedule-${schedule.id}").performScrollTo().performClick()
+        compose.onNodeWithText("Редактировать расписание").assertExists()
+        compose.onNodeWithText("День 14:00").performScrollTo().performClick()
+        compose.onNodeWithTag("save-edit-schedule").performScrollTo().performClick()
+
+        // Wait until schedule time is updated to 14:00
+        compose.waitUntil(10000) { vm.schedules.value.find { it.id == schedule.id }?.times == "14:00" }
+        val updated = runBlocking { app.repository.dao.allSchedules().find { it.id == schedule.id } }
+        org.junit.Assert.assertEquals("14:00", updated?.times)
+
+        runBlocking {
+            app.repository.dao.medication(med.copy(deleted = true))
+            app.repository.deleteSchedule(schedule.id)
+            app.scheduler.reconcile()
+        }
+    }
 }

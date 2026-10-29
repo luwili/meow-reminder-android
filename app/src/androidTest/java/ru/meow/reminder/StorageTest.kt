@@ -228,4 +228,37 @@ class StorageTest {
             scheduler.cancelAll()
         }
     }
+    @Test fun editScheduleUpdatesFutureOccurrencesAndPreservesHistory() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val med = MedicationTemplate(name = "Тест изменения расписания", enabled = true)
+        repo.dao.medication(med)
+        val local = LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)
+        val schedule = repo.addQuickReminder(med.id, local, "DAILY", interval = 1, durationDays = 7)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.reconcile()
+            val occurrencesBefore = repo.dao.allOccurrences().filter { it.scheduleId == schedule.id }
+            assertTrue(occurrencesBefore.isNotEmpty())
+
+            val first = occurrencesBefore.minByOrNull { it.plannedAt }!!
+            repo.mark(first.id, "TAKEN")
+
+            // Update schedule time to 21:30
+            val updatedSchedule = schedule.copy(times = "21:30", label = "Изменённое расписание")
+            repo.saveSchedule(updatedSchedule)
+            scheduler.reconcile()
+
+            // Assert: taken dose is preserved
+            val takenAfter = repo.dao.occurrence(first.id)
+            assertNotNull(takenAfter)
+            assertEquals("TAKEN", takenAfter!!.status)
+
+            // Assert: future pending doses now have the new time 21:30
+            val futurePending = repo.dao.allOccurrences().filter { it.scheduleId == schedule.id && it.status == "PENDING" && !it.cancelled }
+            assertTrue(futurePending.isNotEmpty())
+            assertTrue(futurePending.all { it.localDateTime.endsWith("21:30") })
+        } finally {
+            scheduler.cancelAll()
+        }
+    }
 }

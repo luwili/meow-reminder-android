@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.meow.reminder.data.*
@@ -14,7 +15,7 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
+fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSchedule: (String) -> Unit = {}) {
     val doses by vm.occurrences.collectAsStateWithLifecycle()
     val schedules by vm.schedules.collectAsStateWithLifecycle()
     val meds by vm.medications.collectAsStateWithLifecycle()
@@ -52,7 +53,8 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
             var snoozeNext by remember { mutableStateOf(false) }
             Section("Ближайший приём") {
                 Card(
-                    Modifier.fillMaxWidth(),
+                    onClick = { if (next.scheduleId.isNotBlank()) editSchedule(next.scheduleId) },
+                    modifier = Modifier.fillMaxWidth().testTag("next-dose-card"),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -60,6 +62,11 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text(next.medicationName, style = MaterialTheme.typography.titleMedium)
                                 Text(Instant.ofEpochMilli(next.plannedAt).atZone(zone).format(dateTimeFormat), style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (next.scheduleId.isNotBlank()) {
+                                IconButton(onClick = { editSchedule(next.scheduleId) }, modifier = Modifier.testTag("edit-next-schedule")) {
+                                    Icon(Icons.Outlined.Edit, "Редактировать расписание и время", tint = MaterialTheme.colorScheme.primary)
+                                }
                             }
                             IconButton(onClick = { deleteNextDialog = true }) {
                                 Icon(Icons.Outlined.Delete, "Удалить напоминание", tint = MaterialTheme.colorScheme.error)
@@ -108,11 +115,11 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
 
         Text(today.format(dayFormat).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge)
         if (day.isEmpty()) EmptyState("На сегодня всё спокойно", "Добавьте напоминание или выберите препарат.", prefs.cat)
-        day.forEach { dose -> DoseCard(dose, vm, false) }
+        day.forEach { dose -> DoseCard(dose, vm, false, onEditSchedule = editSchedule) }
 
         if (upcomingAfterToday.isNotEmpty()) {
             Section("Скоро предстоит") {
-                upcomingAfterToday.forEach { dose -> DoseCard(dose, vm, false) }
+                upcomingAfterToday.forEach { dose -> DoseCard(dose, vm, false, onEditSchedule = editSchedule) }
             }
         }
 
@@ -122,7 +129,8 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
                     var deleteScheduleDialog by remember { mutableStateOf(false) }
                     val med = meds.find { it.id == sched.medicationId }
                     Card(
-                        Modifier.fillMaxWidth(),
+                        onClick = { editSchedule(sched.id) },
+                        modifier = Modifier.fillMaxWidth().testTag("schedule-card-${sched.id}"),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                     ) {
                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -132,6 +140,9 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
                                 sched.endDate?.let {
                                     Text("Курс до $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
+                            }
+                            IconButton(onClick = { editSchedule(sched.id) }, modifier = Modifier.testTag("edit-schedule-${sched.id}")) {
+                                Icon(Icons.Outlined.Edit, "Редактировать расписание и время", tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = { deleteScheduleDialog = true }) {
                                 Icon(Icons.Outlined.Delete, "Удалить расписание", tint = MaterialTheme.colorScheme.error)
@@ -171,13 +182,19 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
 }
 
 @Composable
-fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean) {
+fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSchedule: ((String) -> Unit)? = null) {
     var editing by remember { mutableStateOf(false) }
     var snooze by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val pendingPast = dose.status == "PENDING" && dose.plannedAt < System.currentTimeMillis()
     val status = when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> if (pendingPast) "Не подтверждено" else "Ожидается" }
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    val canEditSchedule = !history && dose.scheduleId.isNotBlank() && onEditSchedule != null
+    Card(
+        onClick = { if (canEditSchedule) onEditSchedule!!(dose.scheduleId) },
+        enabled = canEditSchedule,
+        modifier = Modifier.fillMaxWidth().testTag("dose-card-${dose.id}"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(Instant.ofEpochMilli(dose.plannedAt).atZone(ZoneId.systemDefault()).format(timeFormat), style = MaterialTheme.typography.titleLarge)
@@ -185,6 +202,11 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean) {
                 if (dose.status == "TAKEN") {
                     Icon(Icons.Outlined.CheckCircle, "Принято", tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(4.dp))
+                }
+                if (canEditSchedule) {
+                    IconButton(onClick = { onEditSchedule!!(dose.scheduleId) }, modifier = Modifier.testTag("edit-dose-${dose.id}")) {
+                        Icon(Icons.Outlined.Edit, "Редактировать расписание и время", tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 IconButton(onClick = { deleting = true }) {
                     Icon(Icons.Outlined.Delete, "Удалить напоминание", tint = MaterialTheme.colorScheme.onSurfaceVariant)

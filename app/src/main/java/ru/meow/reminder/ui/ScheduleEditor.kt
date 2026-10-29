@@ -17,8 +17,10 @@ import java.time.*
 @Composable
 fun ScheduleEditor(vm: MeowViewModel, id: String, back: () -> Unit) {
     val schedules by vm.schedules.collectAsStateWithLifecycle()
+    val medications by vm.medications.collectAsStateWithLifecycle()
     val original = schedules.find { it.id == id }
     if (original == null) { Page("Расписание", back) { Text("Загрузка…") }; return }
+    val med = medications.find { it.id == original.medicationId }
     var rule by remember(id) { mutableStateOf(original) }
     var deleting by remember { mutableStateOf(false) }
     var validation by remember { mutableStateOf<String?>(null) }
@@ -29,11 +31,32 @@ fun ScheduleEditor(vm: MeowViewModel, id: String, back: () -> Unit) {
     }
     val preview = remember(rule) { runCatching { ScheduleEngine.next(rule, Instant.now(), ZoneId.systemDefault(), 10) }.getOrDefault(emptyList()) }
     Page("Расписание", back) {
+        if (med != null) {
+            Text("${med.icon}  ${med.name}", style = MaterialTheme.typography.titleLarge)
+        }
         Text(if (validation == null) "Сохраняется автоматически" else validation!!, color = if (validation == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         Field(rule.label, "Название шаблона расписания", { change(rule.copy(label = it)) })
         Toggle("Расписание включено", rule.enabled, "Можно приостановить отдельно от других расписаний") { change(rule.copy(enabled = it)) }
         DateButton("Начало", rule.startDate) { change(rule.copy(startDate = it)) }
         Section("Время приёма") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                listOf("09:00" to "Утро 09:00", "14:00" to "День 14:00", "19:00" to "Вечер 19:00", "22:00" to "Ночь 22:00").forEach { (preset, label) ->
+                    val isSelected = preset in rule.times.split(',')
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            val currentTimes = rule.times.split(',').filter { it.isNotBlank() }
+                            val newTimes = if (isSelected) {
+                                if (currentTimes.size > 1) currentTimes - preset else currentTimes
+                            } else {
+                                (currentTimes + preset).distinct().sorted()
+                            }
+                            change(rule.copy(times = newTimes.joinToString(",")))
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
             rule.times.split(',').forEachIndexed { index, time ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TimeButton(time) { new -> change(rule.copy(times = rule.times.split(',').toMutableList().apply { set(index, new) }.distinct().sorted().joinToString(","))) }

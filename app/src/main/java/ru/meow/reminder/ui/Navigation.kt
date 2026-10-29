@@ -26,6 +26,7 @@ fun MeowNavigation(vm: MeowViewModel) {
     var loading by remember { mutableStateOf(true) }
     var quickAdd by remember { mutableStateOf(false) }
     var quickMedicationId by remember { mutableStateOf<String?>(null) }
+    var editingScheduleId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { delay(1100); loading = false }
     LaunchedEffect(error) { error?.let { snack.showSnackbar(it); vm.error.value = null } }
     if (loading || !settings.initialized) {
@@ -63,7 +64,14 @@ fun MeowNavigation(vm: MeowViewModel) {
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
             NavHost(nav, startDestination = "today") {
-                composable("today") { TodayScreen(vm, add = { quickMedicationId = null; quickAdd = true }, settings = { nav.navigate("settings") }) }
+                composable("today") {
+                    TodayScreen(
+                        vm = vm,
+                        add = { quickMedicationId = null; quickAdd = true },
+                        settings = { nav.navigate("settings") },
+                        editSchedule = { scheduleId -> editingScheduleId = scheduleId }
+                    )
+                }
                 composable("library") { LibraryScreen(vm, edit = { nav.navigate("med/$it") }) }
                 composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("schedule/{id}") { e -> ScheduleEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
@@ -80,4 +88,15 @@ fun MeowNavigation(vm: MeowViewModel) {
         vm.save(med)
         nav.navigate("med/${med.id}")
     }, editMedication = { quickAdd = false; nav.navigate("med/$it") })
+    editingScheduleId?.let { scheduleId ->
+        EditScheduleSheet(
+            vm = vm,
+            scheduleId = scheduleId,
+            dismiss = { editingScheduleId = null },
+            openAdvancedEditor = { id ->
+                editingScheduleId = null
+                nav.navigate("schedule/$id")
+            }
+        )
+    }
 }
