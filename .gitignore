@@ -10,3 +10,5 @@ keystore.properties
 captures/
 .DS_Store
 apk-download/
+__pycache__/
+*.pyc

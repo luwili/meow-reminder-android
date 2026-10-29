@@ -131,4 +131,39 @@ class StorageTest {
             assertTrue(repo.dao.occurrence(dose.id)!!.notified)
         } finally { scheduler.cancelAll() }
     }
+    @Test fun quickReminderReusesMedicationAndDoesNotActivateSavedRules() = runBlocking {
+        val med = MedicationTemplate(name = "Сохранённый препарат", purpose = "Личное назначение", dosage = "Пользовательская", note = "Не менять", enabled = false)
+        repo.dao.medication(med)
+        val old = MedicationSchedule(medicationId = med.id, label = "Сохранённый шаблон", frequency = "DAILY", times = "07:00")
+        repo.saveSchedule(old)
+        val local = LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)
+        val created = repo.addQuickReminder(med.id, local, "ONCE")
+        assertEquals(1, repo.dao.allMedications().size)
+        assertEquals(med.copy(enabled = true), repo.dao.allMedications().single())
+        assertTrue(created.enabled)
+        val saved = repo.dao.allSchedules().first { it.id == old.id }
+        assertFalse(saved.enabled)
+        assertEquals(old.times, saved.times)
+        assertEquals(old.label, saved.label)
+    }
+    @Test fun quickReminderLeavesAlreadyActiveSchedulesUnchanged() = runBlocking {
+        val med = MedicationTemplate(name = "Активный препарат", enabled = true)
+        repo.dao.medication(med)
+        val local = LocalDateTime.now().plusDays(1).withHour(12).withMinute(0).withSecond(0).withNano(0)
+        val old = MedicationSchedule(medicationId = med.id, startDate = local.toLocalDate().toString(), times = "08:00", frequency = "DAILY")
+        repo.saveSchedule(old)
+        repo.addQuickReminder(med.id, local, "ONCE")
+        assertEquals(old, repo.dao.allSchedules().first { it.id == old.id })
+    }
+    @Test fun quickReminderRejectsAnExistingDoseAtTheSameTime() = runBlocking {
+        val med = MedicationTemplate(name = "Без дублей", enabled = true)
+        repo.dao.medication(med)
+        val local = LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)
+        repo.addQuickReminder(med.id, local, "ONCE")
+        try {
+            repo.addQuickReminder(med.id, local, "ONCE")
+            fail("Дубль должен быть отклонён")
+        } catch (_: IllegalArgumentException) { }
+        assertEquals(1, repo.dao.allSchedules().size)
+    }
 }

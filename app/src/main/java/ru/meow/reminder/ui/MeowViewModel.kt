@@ -20,6 +20,9 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     val settings = repo.settings.flow.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val error = MutableStateFlow<String?>(null)
     val homePhrase = MutableStateFlow("")
+    val refreshingToday = MutableStateFlow(false)
+    val quickSaving = MutableStateFlow(false)
+    val quickError = MutableStateFlow<String?>(null)
     private val operations = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private var repair: Job? = null
     init {
@@ -56,5 +59,28 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     fun mark(id: String, status: String) = task { app.scheduler.mark(id, status) }
     fun setting(change: (AppSettings) -> AppSettings) = task { repo.settings.update(change) }
     fun refreshPhrase() = task { homePhrase.value = PhraseLibrary.pick(repo.settings, repo.dao.allPhrases()) }
+    fun refreshToday() {
+        if (!refreshingToday.compareAndSet(false, true)) return
+        task {
+            try {
+                app.scheduler.reconcile()
+                homePhrase.value = PhraseLibrary.pick(repo.settings, repo.dao.allPhrases())
+            } finally { refreshingToday.value = false }
+        }
+    }
+    fun addQuickReminder(medicationId: String, local: java.time.LocalDateTime, frequency: String, complete: () -> Unit) {
+        if (!quickSaving.compareAndSet(false, true)) return
+        quickError.value = null
+        task {
+            try {
+                repo.addQuickReminder(medicationId, local, frequency)
+                app.scheduler.reconcile()
+                withContext(Dispatchers.Main) { complete() }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                quickError.value = if (e is IllegalArgumentException) e.message else "Не удалось добавить напоминание. Проверьте данные и повторите попытку."
+            } finally { quickSaving.value = false }
+        }
+    }
     fun deleteSchedule(id: String) = task { repo.dao.cancelSchedule(id); repo.dao.deleteSchedule(id); app.scheduler.reconcile() }
 }

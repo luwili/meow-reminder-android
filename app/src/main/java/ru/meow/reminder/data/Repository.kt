@@ -50,6 +50,40 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
         }
     }
 
+    suspend fun addQuickReminder(medicationId: String, local: LocalDateTime, frequency: String): MedicationSchedule {
+        require(frequency in setOf("ONCE", "DAILY")) { "Выберите периодичность" }
+        require(local.second == 0 && local.nano == 0) { "Выберите время с точностью до минуты" }
+        require(local > LocalDateTime.now()) { "Выберите будущее время напоминания" }
+        val prefs = settings.get()
+        val schedule = MedicationSchedule(medicationId = medicationId,
+            label = if (frequency == "ONCE") "Разовое напоминание" else "Ежедневное напоминание",
+            enabled = true, frequency = frequency, startDate = local.toLocalDate().toString(),
+            times = local.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
+            repeatNotification = prefs.repeatDefault, repeatMinutes = prefs.repeatMinutes)
+        ScheduleEngine.validate(schedule)
+        database.withTransaction {
+            val med = dao.allMedications().find { it.id == medicationId }
+                ?: throw IllegalArgumentException("Препарат не найден")
+            require(!med.deleted && !med.archived && med.name.isNotBlank()) { "Выберите препарат из действующей библиотеки" }
+            val old = dao.allSchedules().filter { it.medicationId == medicationId }
+            if (med.enabled) {
+                require(old.none { it.enabled && ScheduleEngine.between(it, local, local).isNotEmpty() }) {
+                    "На это время уже запланирован приём этого препарата"
+                }
+            } else {
+                // Explicit quick-add starts only the new reminder, not every saved rule.
+                old.filter { it.enabled }.forEach {
+                    dao.cancelSchedule(it.id)
+                    dao.clearFuture(it.id, System.currentTimeMillis())
+                    dao.schedule(it.copy(enabled = false, generatedThrough = null))
+                }
+            }
+            dao.schedule(schedule)
+            dao.medication(med.copy(enabled = true))
+        }
+        return schedule
+    }
+
     suspend fun duplicate(medication: MedicationTemplate) {
         database.withTransaction {
             val copy = medication.copy(id = newId(), name = medication.name + " — копия", enabled = false, archived = false, deleted = false, createdAt = System.currentTimeMillis())

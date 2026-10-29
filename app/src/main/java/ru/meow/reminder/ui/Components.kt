@@ -9,10 +9,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -26,12 +30,22 @@ val dateTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:m
 val timeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
-fun Page(title: String, back: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
+fun Page(title: String, back: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {},
+    refreshing: Boolean = false, onRefresh: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text(title, style = MaterialTheme.typography.titleLarge) }, navigationIcon = {
             if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") }
         }, actions = actions)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+        val body: @Composable () -> Unit = {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+        }
+        if (onRefresh != null) {
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh,
+                modifier = Modifier.weight(1f).testTag("pull-to-refresh").semantics {
+                    customActions = listOf(CustomAccessibilityAction("Обновить приёмы") { onRefresh(); true })
+                }) { body() }
+        } else Box(Modifier.weight(1f)) { body() }
     }
 }
 

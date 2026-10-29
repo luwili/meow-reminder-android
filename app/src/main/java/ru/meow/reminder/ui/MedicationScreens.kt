@@ -19,7 +19,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 @Composable
-fun LibraryScreen(vm: MeowViewModel, edit: (String) -> Unit) {
+fun LibraryScreen(vm: MeowViewModel, edit: (String) -> Unit, remind: (String) -> Unit) {
     val meds by vm.medications.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var search by remember { mutableStateOf("") }
@@ -49,6 +49,9 @@ fun LibraryScreen(vm: MeowViewModel, edit: (String) -> Unit) {
                         Text(med.name.ifBlank { "Новый препарат" }, style = MaterialTheme.typography.titleMedium)
                         if (med.purpose.isNotBlank()) Text(med.purpose, style = MaterialTheme.typography.bodySmall)
                         Text(if (med.archived) "В архиве" else if (med.enabled) "Напоминания включены" else "Сохранён без напоминаний", style = MaterialTheme.typography.bodySmall)
+                    }
+                    IconButton(enabled = !med.archived && med.name.isNotBlank(), onClick = { remind(med.id) }) {
+                        Icon(Icons.Outlined.AddAlarm, "Напомнить: ${med.name}")
                     }
                     Switch(checked = med.enabled && !med.archived, onCheckedChange = {
                         if (it && med.name.isBlank()) vm.error.value = "Сначала укажите название препарата"

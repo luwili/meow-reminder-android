@@ -18,6 +18,7 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
     val doses by vm.occurrences.collectAsStateWithLifecycle()
     val prefs by vm.settings.collectAsStateWithLifecycle()
     val phrase by vm.homePhrase.collectAsStateWithLifecycle()
+    val refreshing by vm.refreshingToday.collectAsStateWithLifecycle()
     val zone = ZoneId.systemDefault()
     var today by remember { mutableStateOf(LocalDate.now()) }
     LaunchedEffect(Unit) {
@@ -27,7 +28,8 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
     val day = doses.filter { Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() == today && (!it.cancelled || it.status != "PENDING") }.sortedBy { it.plannedAt }
     val next = doses.filter { !it.cancelled && it.status == "PENDING" && it.plannedAt > System.currentTimeMillis() }.minByOrNull { it.plannedAt }
     val greeting = when (LocalTime.now().hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Тихой ночи" }
-    Page("Мяу, пора!", actions = { IconButton(onClick = add) { Icon(Icons.Outlined.Add, "Добавить препарат") } }) {
+    Page("Мяу, пора!", actions = { IconButton(onClick = add) { Icon(Icons.Outlined.Add, "Добавить напоминание") } },
+        refreshing = refreshing, onRefresh = { today = LocalDate.now(); vm.refreshToday() }) {
         Text(greeting, style = MaterialTheme.typography.headlineLarge)
         Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.extraLarge) {
             Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -46,7 +48,7 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit) {
         Text(today.format(dayFormat).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge)
         if (day.isEmpty()) EmptyState("На сегодня всё спокойно", "Добавьте препарат или включите сохранённое расписание.", prefs.cat)
         day.forEach { dose -> DoseCard(dose, vm, false) }
-        FilledTonalButton(onClick = add, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Добавить препарат") }
+        FilledTonalButton(onClick = add, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Добавить напоминание") }
     }
 }
 

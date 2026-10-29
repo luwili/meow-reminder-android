@@ -24,10 +24,20 @@ jobs:
         with:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
+      - name: Постоянная подпись для обновления без удаления данных
+        if: github.event_name != 'pull_request'
+        env:
+          MEOW_UPDATE_KEYSTORE_BASE64: ${{ secrets.MEOW_UPDATE_KEYSTORE_BASE64 }}
+        run: bash scripts/restore-signing-key.sh
       - name: Установить Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Тесты, lint и сборка
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon
+      - name: Проверить совместимость подписи с опубликованными APK
+        if: github.event_name != 'pull_request'
+        run: |
+          certificate=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$certificate" = 'e34c11293f9b67a0e1b1203ea52658725682ea92420fad7838f1ffc783667f4b'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -43,7 +53,10 @@ jobs:
       - name: Результат
         run: |
           echo '### 🐾 APK готов' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Скачайте **meow-reminder-debug-apk** в разделе Artifacts этого запуска. Это тестовая сборка, подписанная debug-ключом.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Скачайте **meow-reminder-debug-apk** в разделе Artifacts этого запуска. Push/ручные сборки подписаны постоянным ключом обновлений. APK из pull request — только для тестов, его подпись может отличаться.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Удалить временную копию ключа с runner
+        if: always() && github.event_name != 'pull_request'
+        run: rm -f "$HOME/.android/debug.keystore"
   instrumented:
     name: Android UI и Room
     runs-on: ubuntu-24.04
@@ -59,6 +72,11 @@ jobs:
         with:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
+      - name: Подпись тестируемой сборки тем же ключом
+        if: github.event_name != 'pull_request'
+        env:
+          MEOW_UPDATE_KEYSTORE_BASE64: ${{ secrets.MEOW_UPDATE_KEYSTORE_BASE64 }}
+        run: bash scripts/restore-signing-key.sh
       - name: Разрешить KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -80,3 +98,6 @@ jobs:
         with:
           name: instrumented-reports
           path: app/build/reports/androidTests/
+      - name: Удалить временную копию ключа с runner
+        if: always() && github.event_name != 'pull_request'
+        run: rm -f "$HOME/.android/debug.keystore"
