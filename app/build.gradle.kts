@@ -16,6 +16,14 @@ android {
         versionName = "1.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        getByName("debug") {
+            val key = File(System.getProperty("user.home"), ".android/debug.keystore")
+            if (key.exists()) {
+                storeFile = key
+            }
+        }
+    }
     buildFeatures { compose = true; buildConfig = true }
     bundle { language { enableSplit = false } }
     compileOptions {
