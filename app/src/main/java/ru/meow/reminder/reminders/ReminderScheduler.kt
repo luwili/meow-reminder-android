@@ -12,6 +12,7 @@ import ru.meow.reminder.MainActivity
 import ru.meow.reminder.R
 import ru.meow.reminder.data.*
 import ru.meow.reminder.domain.ScheduleEngine
+import ru.meow.reminder.domain.AlarmRecovery
 import java.time.*
 import java.time.format.DateTimeFormatter
 
@@ -31,9 +32,10 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
         alarmPrefs.edit().remove("ids").commit()
     }
 
-    suspend fun reconcile() = mutex.withLock { reconcileLocked() }
+    suspend fun reconcile(recoverRecent: Boolean = true) = mutex.withLock { reconcileLocked(recoverRecent) }
 
-    private suspend fun reconcileLocked() {
+    private suspend fun reconcileLocked(recoverRecent: Boolean = true) {
+        val previouslyArmed = alarmPrefs.getStringSet("ids", emptySet()).orEmpty().toSet()
         cancelAlarms()
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
@@ -73,8 +75,15 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
                 val at = LocalDateTime.parse(dose.localDateTime).atZone(zone).toInstant().toEpochMilli()
                 updated = dose.copy(plannedAt = at)
             }
-            if (!updated.notified && updated.plannedAt <= now) updated = updated.copy(notified = true)
-            if (updated.nextAttemptAt != null && updated.nextAttemptAt!! <= now) updated = updated.copy(nextAttemptAt = null)
+            if (!updated.notified && updated.plannedAt <= now) {
+                if (AlarmRecovery.retainDueAttempt(updated.id in previouslyArmed, updated.plannedAt, now, recoverRecent)) {
+                    toSchedule.add(updated.id to updated.plannedAt)
+                } else updated = updated.copy(notified = true)
+            }
+            if (updated.nextAttemptAt != null && updated.nextAttemptAt!! <= now &&
+                !AlarmRecovery.retainDueAttempt(updated.id in previouslyArmed, updated.nextAttemptAt!!, now, recoverRecent)) {
+                updated = updated.copy(nextAttemptAt = null, nextAttemptKind = null)
+            }
             if (updated != dose) repo.dao.occurrence(updated)
             updated.nextAttemptAt?.let { toSchedule.add(updated.id to it) }
         }
@@ -112,23 +121,44 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
     }
 
     suspend fun mark(id: String, status: String) = mutex.withLock {
+        markLocked(id, status)
+    }
+
+    private suspend fun markLocked(id: String, status: String) {
         repo.mark(id, status)
         notifications.cancel(id, 1)
         reconcileLocked()
     }
 
     suspend fun snooze(id: String, minutes: Int) = mutex.withLock {
-        val dose = repo.dao.occurrence(id) ?: return@withLock
-        if (dose.status != "PENDING" || dose.cancelled) return@withLock
+        snoozeLocked(id, minutes)
+    }
+
+    private suspend fun snoozeLocked(id: String, minutes: Int) {
+        val dose = repo.dao.occurrence(id) ?: return
+        if (dose.status != "PENDING" || dose.cancelled) return
         repo.dao.occurrence(dose.copy(notified = true, nextAttemptAt = ScheduleEngine.snoozeAt(Instant.now(), minutes).toEpochMilli(), nextAttemptKind = "SNOOZE"))
         notifications.cancel(id, 1)
         reconcileLocked()
     }
 
+    /** A bridged watch action can arrive after its notification was cancelled on the phone. */
+    suspend fun handleNotificationAction(id: String, action: String) = mutex.withLock {
+        val dose = repo.dao.occurrence(id)
+        if (dose == null || dose.status != "PENDING" || dose.cancelled) {
+            notifications.cancel(id, 1)
+            return@withLock
+        }
+        when (action) {
+            "TAKEN", "SKIPPED" -> markLocked(id, action)
+            "SNOOZE_10" -> snoozeLocked(id, 10)
+        }
+    }
+
     private fun action(id: String, action: String): PendingIntent = PendingIntent.getBroadcast(context, 0,
         Intent(context, ReminderReceiver::class.java).setAction(action).setData(Uri.parse("meow://$action/${Uri.encode(id)}")).putExtra("id", id), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private suspend fun show(dose: DoseOccurrence, med: MedicationTemplate) {
+    internal suspend fun buildNotification(dose: DoseOccurrence, med: MedicationTemplate): Notification {
         val settings = repo.settings.get()
         val channelId = "doses-${settings.sound}-${settings.vibration}"
         val channel = NotificationChannel(channelId, "Напоминания · ${if (settings.sound) "со звуком" else "без звука"} · ${if (settings.vibration) "вибрация" else "без вибрации"}", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -145,16 +175,27 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
         val snooze = PendingIntent.getActivity(context, 0, Intent(context, SnoozeActivity::class.java)
             .setData(Uri.parse("meow://snooze/${Uri.encode(dose.id)}")).putExtra("id", dose.id), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val publicVersion = NotificationCompat.Builder(context, channelId).setSmallIcon(R.drawable.ic_notification).setContentTitle("Мяу, пора!").setContentText("У вас запланирован приём").build()
-        val notification = NotificationCompat.Builder(context, channelId)
+        val taken = NotificationCompat.Action.Builder(0, "Принято", action(dose.id, "TAKEN")).setAllowGeneratedReplies(false).build()
+        val skipped = NotificationCompat.Action.Builder(0, "Пропустить", action(dose.id, "SKIPPED")).setAllowGeneratedReplies(false).build()
+        val watchSnooze = NotificationCompat.Action.Builder(0, "На 10 минут", action(dose.id, "SNOOZE_10")).setAllowGeneratedReplies(false).build()
+        return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle("Мяу! Время позаботиться о себе 🐾")
             .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(listOf(text, phrase).filter { it.isNotEmpty() }.joinToString("\n")))
             .setContentIntent(open).setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setLocalOnly(false)
             .setVisibility(if (settings.privateNotifications) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
             .setPublicVersion(publicVersion)
-            .addAction(0, "Принято", action(dose.id, "TAKEN"))
+            .addAction(taken)
             .addAction(0, "Отложить", snooze)
-            .addAction(0, "Пропустить", action(dose.id, "SKIPPED"))
+            .addAction(skipped)
+            .extend(NotificationCompat.WearableExtender()
+                .setDismissalId(dose.id)
+                .addAction(taken).addAction(watchSnooze).addAction(skipped))
             .build()
+    }
+
+    private suspend fun show(dose: DoseOccurrence, med: MedicationTemplate) {
+        val notification = buildNotification(dose, med)
         if (NotificationManagerCompat.from(context).areNotificationsEnabled()) {
             try { notifications.notify(dose.id, 1, notification) } catch (_: SecurityException) { /* Permission may change between check and post. */ }
         }

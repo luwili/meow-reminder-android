@@ -3,8 +3,6 @@ package ru.meow.reminder.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,12 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -32,41 +24,6 @@ val ru: Locale = Locale.forLanguageTag("ru")
 val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM, EEEE", ru)
 val dateTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:mm", ru)
 val timeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-@Composable
-fun Cat(modifier: Modifier = Modifier, playing: Boolean = false, animate: Boolean = true, sleepy: Boolean = false) {
-    val transition = rememberInfiniteTransition(label = "Котик играет")
-    val motion by transition.animateFloat(-1f, 1f, infiniteRepeatable(tween(750, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "Лапка")
-    val offset = if (playing && animate) motion else 0f
-    val ink = MaterialTheme.colorScheme.onSurface
-    val eyes = MaterialTheme.colorScheme.surface
-    val pill = MaterialTheme.colorScheme.primary
-    Canvas(modifier.semantics { contentDescription = if (playing) "Котик играет с таблеткой" else "Довольный котик" }) {
-        val unit = size.minDimension / 120f
-        fun p(x: Float, y: Float) = Offset(x * unit, y * unit)
-        val head = Path().apply {
-            moveTo(22 * unit, 72 * unit); quadraticTo(16 * unit, 48 * unit, 23 * unit, 24 * unit)
-            lineTo(42 * unit, 39 * unit); quadraticTo(56 * unit, 34 * unit, 71 * unit, 39 * unit)
-            lineTo(88 * unit, 24 * unit); quadraticTo(98 * unit, 65 * unit, 87 * unit, 81 * unit)
-            cubicTo(75 * unit, 101 * unit, 34 * unit, 99 * unit, 22 * unit, 72 * unit); close()
-        }
-        drawPath(head, ink)
-        if (sleepy) {
-            drawLine(eyes, p(35f, 60f), p(45f, 60f), 3 * unit, StrokeCap.Round)
-            drawLine(eyes, p(65f, 60f), p(75f, 60f), 3 * unit, StrokeCap.Round)
-        } else {
-            drawOval(eyes, p(36f, 54f), Size(7 * unit, 11 * unit))
-            drawOval(eyes, p(65f, 54f), Size(7 * unit, 11 * unit))
-        }
-        drawLine(Color(0xFFF4CBD9), p(52f, 71f), p(58f, 71f), 4 * unit, StrokeCap.Round)
-        drawArc(eyes, 10f, 160f, false, p(48f, 73f), Size(15 * unit, 9 * unit), style = Stroke(1.5f * unit))
-        if (playing) {
-            drawLine(ink, p(72f, 86f), p(94f + offset * 4, 91f), 12 * unit, StrokeCap.Round)
-            drawLine(pill, p(94f + offset * 8, 100f), p(107f + offset * 8, 88f), 13 * unit, StrokeCap.Round)
-            drawLine(eyes, p(96f + offset * 8, 89f), p(105f + offset * 8, 99f), 2 * unit)
-        }
-    }
-}
 
 @Composable
 fun Page(title: String, back: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {

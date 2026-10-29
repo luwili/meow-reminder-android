@@ -19,7 +19,9 @@ class MeowApp : Application() {
         scheduler = ReminderScheduler(this, repository)
         scope.launch {
             repository.initialize()
-            scheduler.reconcile()
+            // AlarmManager can create this process to deliver FIRE. Do not run repair here:
+            // it could mark the just-due occurrence notified before ReminderReceiver reads it.
+            // MainActivity.onResume and RepairWorker explicitly restore alarms instead.
         }
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("reminder-repair", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<RepairWorker>(6, TimeUnit.HOURS).build())

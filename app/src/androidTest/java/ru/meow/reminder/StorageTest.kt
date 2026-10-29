@@ -111,4 +111,24 @@ class StorageTest {
             assertNull(repo.dao.occurrence(dose.id)!!.nextAttemptAt)
         } finally { scheduler.cancelAll() }
     }
+    @Test fun repairDoesNotConsumeAnAlreadyArmedJustDueAlarm() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val local = LocalDateTime.now().minusSeconds(2).withNano(0)
+        val med = MedicationTemplate(name = "Гонка восстановления", enabled = true)
+        val schedule = MedicationSchedule(medicationId = med.id, startDate = local.toLocalDate().toString(), times = local.toLocalTime().toString())
+        val dose = DoseOccurrence(ru.meow.reminder.domain.ScheduleEngine.occurrenceId(schedule.id, local),
+            schedule.id, med.id, med.name, local.toString(), local.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+        repo.dao.medication(med)
+        repo.saveSchedule(schedule)
+        repo.dao.occurrence(dose)
+        context.getSharedPreferences("system_alarms", android.content.Context.MODE_PRIVATE).edit()
+            .putStringSet("ids", setOf(dose.id)).commit()
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.reconcile()
+            assertFalse("Repair не должен поглощать уже взведённый будильник перед FIRE", repo.dao.occurrence(dose.id)!!.notified)
+            scheduler.reconcile(recoverRecent = false) // boot/time-change: no historical replay
+            assertTrue(repo.dao.occurrence(dose.id)!!.notified)
+        } finally { scheduler.cancelAll() }
+    }
 }

@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.room.withTransaction
 import ru.meow.reminder.data.*
+import ru.meow.reminder.BuildConfig
 import java.time.LocalDate
 
 @Composable
@@ -114,6 +116,23 @@ fun SettingsScreen(vm: MeowViewModel) {
             OutlinedButton(onClick = { vm.task { vm.app.scheduler.testNotification() } }) { Text("Тестовое уведомление") }
             Text("Doze и прошивки производителей могут задерживать уведомления. После принудительной остановки откройте приложение снова. При необходимости проверьте ограничения батареи в системных настройках.", style = MaterialTheme.typography.bodySmall)
         }
+        Section("Samsung Galaxy и Galaxy Watch") {
+            Text("Для Galaxy: разрешите уведомления и точные будильники. В настройках телефона проверьте «Батарея → Ограничения фонового использования»: приложение не должно находиться в списке глубокого сна. При необходимости добавьте его в список никогда не спящих приложений.")
+            Text("Galaxy Wearable → Настройки часов → Уведомления → Уведомления приложений → Мяу, пора! Для проверки включите показ уведомлений на часах даже при использовании телефона. Названия пунктов зависят от модели и версии One UI.")
+            Text("Часы должны быть подключены к телефону; проверьте «Не беспокоить», режим сна, ношение часов и громкость. Приложение на часах отдельно не устанавливается: используется пересылка уведомлений телефона. Для старых часов на Tizen набор действий может отличаться.", style = MaterialTheme.typography.bodySmall)
+            Text("Скрытие подробностей на часах настраивается в Galaxy Wearable отдельно от экрана блокировки телефона.", style = MaterialTheme.typography.bodySmall)
+            Text("На совместимых часах передаются действия «Принято», «На 10 минут», «Пропустить». Выбор произвольной отсрочки остаётся на телефоне. Фактический показ кнопок и доставка зависят от Galaxy Wearable и прошивки.", style = MaterialTheme.typography.bodySmall)
+            var batteryExempt by remember { mutableStateOf(false) }
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                batteryExempt = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+            }
+            Text(if (batteryExempt) "Исключение из стандартной оптимизации Android: включено. Списки сна Samsung нужно проверить отдельно."
+                else "Стандартная оптимизация батареи Android активна. Приложение не может само проверить списки глубокого сна Samsung.", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+            }) { Text("Открыть параметры приложения") }
+            Text("Для проверки создайте одноразовый приём через 2–3 минуты, закройте окно и заблокируйте телефон. Проверьте уведомление на телефоне и часах, затем каждое действие. Тестовое уведомление выше проверяет отображение, а не автономную работу часов.", style = MaterialTheme.typography.bodySmall)
+        }
         Section("Данные") {
             Text("JSON содержит медицинские записи и заметки в открытом виде. Сохраняйте его в надёжном месте.", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { export.launch("meow-backup-${LocalDate.now()}.json") }) { Text("Экспорт в JSON") }
@@ -124,7 +143,7 @@ fun SettingsScreen(vm: MeowViewModel) {
             Text("Все записи хранятся локально. Нет рекламы, аналитики, регистрации и передачи медицинских данных. Приложение не запрашивает доступ к интернету.")
             Text("Не является медицинской рекомендацией или системой экстренного оповещения.", style = MaterialTheme.typography.bodySmall)
         }
-        Text("Мяу, пора! · 1.0.0\nРазработчик L", modifier = Modifier.padding(vertical = 24.dp), style = MaterialTheme.typography.bodySmall)
+        Text("Мяу, пора! · ${BuildConfig.VERSION_NAME}\nРазработчик L", modifier = Modifier.padding(vertical = 24.dp), style = MaterialTheme.typography.bodySmall)
     }
     if (reset) Confirm("Полностью сбросить приложение?", "Препараты, история, заметки и свои фразы будут удалены. Сначала экспортируйте данные, если они нужны.", { reset = false }) {
         vm.task {

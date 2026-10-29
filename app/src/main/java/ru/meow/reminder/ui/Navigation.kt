@@ -27,18 +27,15 @@ fun MeowNavigation(vm: MeowViewModel) {
     LaunchedEffect(Unit) { delay(1100); loading = false }
     LaunchedEffect(error) { error?.let { snack.showSnackbar(it); vm.error.value = null } }
     if (loading || !settings.initialized) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            if (settings.cat) Cat(Modifier.size(150.dp), playing = true, animate = settings.animations)
-            Spacer(Modifier.height(24.dp))
-            Text("Мяу, пора!", style = MaterialTheme.typography.headlineLarge)
-            Text("Немного заботы каждый день", modifier = Modifier.padding(12.dp))
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            RotatingPill(Modifier.size(96.dp), animate = settings.animations)
         }
         return
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     if (!settings.welcomed) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Cat(Modifier.size(140.dp), playing = true, animate = settings.animations)
+            Cat(Modifier.size(140.dp), playing = true)
             Text("Забота без суеты", style = MaterialTheme.typography.headlineLarge)
             Text("Препараты, напоминания и заметки — только на вашем устройстве. Без регистрации и рекламы.", modifier = Modifier.padding(vertical = 20.dp))
             Text("Режим приёма и дозировку указываете вы, согласно назначению или инструкции.", style = MaterialTheme.typography.bodyMedium)
