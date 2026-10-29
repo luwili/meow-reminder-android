@@ -36,7 +36,10 @@ jobs:
       - name: Проверить совместимость подписи с опубликованными APK
         if: github.event_name != 'pull_request'
         run: |
-          certificate=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          output=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk 2>&1 || true)
+          echo "$output"
+          certificate=$(printf '%s\n' "$output" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          echo "Certificate: '$certificate'"
           test "$certificate" = 'e34c11293f9b67a0e1b1203ea52658725682ea92420fad7838f1ffc783667f4b'
       - uses: actions/upload-artifact@v4
         if: always()
