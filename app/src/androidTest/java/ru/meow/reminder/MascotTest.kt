@@ -33,6 +33,7 @@ class MascotTest {
         val after = pill.captureToImage().asAndroidBitmap()
         assertFalse(before.sameAs(after))
         compose.onNodeWithText("Мяу, пора!").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Довольный котик").assertDoesNotExist()
         compose.onNodeWithContentDescription("Милый котик с большими глазками").assertDoesNotExist()
     }
     @Test fun disabledAnimationLeavesPillStill() {

@@ -32,7 +32,7 @@ jobs:
       - name: Установить Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Тесты, lint и сборка
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon --stacktrace
       - name: Проверить совместимость подписи с опубликованными APK
         if: github.event_name != 'pull_request'
         run: |

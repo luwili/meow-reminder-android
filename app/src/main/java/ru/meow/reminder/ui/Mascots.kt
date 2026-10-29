@@ -35,69 +35,38 @@ fun RotatingPill(modifier: Modifier = Modifier, animate: Boolean = true) {
     }
 }
 
-/** Rounded cheeks, small ears and glossy eyes; the charcoal kitten stays dark in both themes. */
+/** Original minimalist mascot, restored at the user's request. */
 @Composable
-fun Cat(modifier: Modifier = Modifier, playing: Boolean = false, sleepy: Boolean = false) {
-    val ink = Color(0xFF35313F)
-    val cream = Color(0xFFFFFBF7)
-    val pink = Color(0xFFEBAFC4)
-    val halo = MaterialTheme.colorScheme.primaryContainer
+fun Cat(modifier: Modifier = Modifier, playing: Boolean = false, animate: Boolean = true, sleepy: Boolean = false) {
+    val transition = rememberInfiniteTransition(label = "Котик играет")
+    val motion by transition.animateFloat(-1f, 1f, infiniteRepeatable(tween(750, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "Лапка")
+    val offset = if (playing && animate) motion else 0f
+    val ink = MaterialTheme.colorScheme.onSurface
+    val eyes = MaterialTheme.colorScheme.surface
     val pill = MaterialTheme.colorScheme.primary
-    Canvas(modifier.semantics { contentDescription = when {
-        playing -> "Милый котик обнимает таблетку"
-        sleepy -> "Сонный котик с розовыми щёчками"
-        else -> "Милый котик с большими глазками"
-    } }) {
-        val u = size.minDimension / 120f
-        fun p(x: Float, y: Float) = Offset(x * u, y * u)
-        drawOval(halo.copy(alpha = .65f), p(8f, 14f), Size(104 * u, 100 * u))
+    Canvas(modifier.semantics { contentDescription = if (playing) "Котик играет с таблеткой" else "Довольный котик" }) {
+        val unit = size.minDimension / 120f
+        fun p(x: Float, y: Float) = Offset(x * unit, y * unit)
         val head = Path().apply {
-            moveTo(21 * u, 58 * u)
-            quadraticTo(19 * u, 39 * u, 26 * u, 24 * u)
-            quadraticTo(28 * u, 20 * u, 32 * u, 25 * u)
-            lineTo(45 * u, 38 * u)
-            quadraticTo(60 * u, 33 * u, 75 * u, 38 * u)
-            lineTo(88 * u, 25 * u)
-            quadraticTo(92 * u, 20 * u, 94 * u, 24 * u)
-            quadraticTo(101 * u, 39 * u, 99 * u, 58 * u)
-            cubicTo(111 * u, 92 * u, 91 * u, 105 * u, 60 * u, 105 * u)
-            cubicTo(29 * u, 105 * u, 9 * u, 92 * u, 21 * u, 58 * u)
-            close()
+            moveTo(22 * unit, 72 * unit); quadraticTo(16 * unit, 48 * unit, 23 * unit, 24 * unit)
+            lineTo(42 * unit, 39 * unit); quadraticTo(56 * unit, 34 * unit, 71 * unit, 39 * unit)
+            lineTo(88 * unit, 24 * unit); quadraticTo(98 * unit, 65 * unit, 87 * unit, 81 * unit)
+            cubicTo(75 * unit, 101 * unit, 34 * unit, 99 * unit, 22 * unit, 72 * unit); close()
         }
         drawPath(head, ink)
-        val leftEar = Path().apply { moveTo(27 * u, 42 * u); lineTo(29 * u, 30 * u); lineTo(39 * u, 42 * u); close() }
-        val rightEar = Path().apply { moveTo(81 * u, 42 * u); lineTo(91 * u, 30 * u); lineTo(93 * u, 42 * u); close() }
-        drawPath(leftEar, pink.copy(alpha = .8f)); drawPath(rightEar, pink.copy(alpha = .8f))
         if (sleepy) {
-            drawArc(cream, 195f, 150f, false, p(33f, 61f), Size(16 * u, 12 * u), style = Stroke(2.8f * u, cap = StrokeCap.Round))
-            drawArc(cream, 195f, 150f, false, p(71f, 61f), Size(16 * u, 12 * u), style = Stroke(2.8f * u, cap = StrokeCap.Round))
+            drawLine(eyes, p(35f, 60f), p(45f, 60f), 3 * unit, StrokeCap.Round)
+            drawLine(eyes, p(65f, 60f), p(75f, 60f), 3 * unit, StrokeCap.Round)
         } else {
-            for (x in listOf(35f, 72f)) {
-                drawOval(cream, p(x, 57f), Size(14 * u, 19 * u))
-                drawOval(ink, p(x + 3, 61f), Size(8 * u, 12 * u))
-                drawCircle(cream, 2.7f * u, p(x + 4.5f, 62f))
-                drawCircle(cream, 1.2f * u, p(x + 9f, 68f))
-            }
+            drawOval(eyes, p(36f, 54f), Size(7 * unit, 11 * unit))
+            drawOval(eyes, p(65f, 54f), Size(7 * unit, 11 * unit))
         }
-        drawOval(pink.copy(alpha = .7f), p(26f, 77f), Size(16 * u, 7 * u))
-        drawOval(pink.copy(alpha = .7f), p(78f, 77f), Size(16 * u, 7 * u))
-        val nose = Path().apply { moveTo(56 * u, 77 * u); quadraticTo(60 * u, 75 * u, 64 * u, 77 * u); lineTo(60 * u, 81 * u); close() }
-        drawPath(nose, pink)
-        val smile = Path().apply {
-            moveTo(51 * u, 84 * u); quadraticTo(56 * u, 89 * u, 60 * u, 82 * u)
-            quadraticTo(64 * u, 89 * u, 69 * u, 84 * u)
-        }
-        drawPath(smile, cream, style = Stroke(1.8f * u, cap = StrokeCap.Round))
-        for (y in listOf(72f, 78f)) {
-            drawLine(cream.copy(alpha = .45f), p(17f, y - 1), p(28f, y + 1), 1.2f * u, StrokeCap.Round)
-            drawLine(cream.copy(alpha = .45f), p(92f, y + 1), p(103f, y - 1), 1.2f * u, StrokeCap.Round)
-        }
+        drawLine(Color(0xFFF4CBD9), p(52f, 71f), p(58f, 71f), 4 * unit, StrokeCap.Round)
+        drawArc(eyes, 10f, 160f, false, p(48f, 73f), Size(15 * unit, 9 * unit), style = Stroke(1.5f * unit))
         if (playing) {
-            rotate(-35f, p(84f, 100f)) {
-                drawRoundRect(pill, p(70f, 93f), Size(29 * u, 13 * u), CornerRadius(6.5f * u))
-                drawLine(cream, p(84f, 94f), p(84f, 105f), 1.4f * u)
-            }
-            drawOval(ink, p(65f, 92f), Size(16 * u, 13 * u))
+            drawLine(ink, p(72f, 86f), p(94f + offset * 4, 91f), 12 * unit, StrokeCap.Round)
+            drawLine(pill, p(94f + offset * 8, 100f), p(107f + offset * 8, 88f), 13 * unit, StrokeCap.Round)
+            drawLine(eyes, p(96f + offset * 8, 89f), p(105f + offset * 8, 99f), 2 * unit)
         }
     }
 }

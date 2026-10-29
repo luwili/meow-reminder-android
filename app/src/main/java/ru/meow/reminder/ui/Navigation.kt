@@ -37,7 +37,7 @@ fun MeowNavigation(vm: MeowViewModel) {
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     if (!settings.welcomed) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Cat(Modifier.size(140.dp), playing = true)
+            Cat(Modifier.size(140.dp), playing = true, animate = settings.animations)
             Text("Забота без суеты", style = MaterialTheme.typography.headlineLarge)
             Text("Препараты, напоминания и заметки — только на вашем устройстве. Без регистрации и рекламы.", modifier = Modifier.padding(vertical = 20.dp))
             Text("Режим приёма и дозировку указываете вы, согласно назначению или инструкции.", style = MaterialTheme.typography.bodyMedium)
