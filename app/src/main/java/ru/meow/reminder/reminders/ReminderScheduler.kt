@@ -22,6 +22,8 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
     private val notifications = context.getSystemService(NotificationManager::class.java)
     private val alarmPrefs = context.getSharedPreferences("system_alarms", Context.MODE_PRIVATE)
     fun exactAllowed() = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
+    fun isAlarmClockMode() = alarmPrefs.getBoolean("alarm_clock_mode", true)
+    fun setAlarmClockMode(enabled: Boolean) { alarmPrefs.edit().putBoolean("alarm_clock_mode", enabled).commit() }
 
     private fun pending(id: String, at: Long = 0): PendingIntent = PendingIntent.getBroadcast(context, 0,
         Intent(context, ReminderReceiver::class.java).setAction("FIRE").setData(Uri.parse("meow://alarm/${Uri.encode(id)}"))
@@ -35,6 +37,7 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
     suspend fun reconcile(recoverRecent: Boolean = true) = mutex.withLock { reconcileLocked(recoverRecent) }
 
     private suspend fun reconcileLocked(recoverRecent: Boolean = true) {
+        repo.repairAnomalousOccurrences()
         val previouslyArmed = alarmPrefs.getStringSet("ids", emptySet()).orEmpty().toSet()
         cancelAlarms()
         val now = System.currentTimeMillis()
@@ -95,12 +98,24 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
                 .minByOrNull { it.plannedAt }?.let { toSchedule.add(it.id to it.plannedAt) }
         }
         // Persist before interacting with AlarmManager so a later repair can cancel partial work.
+        val alarmClock = isAlarmClockMode()
         alarmPrefs.edit().putStringSet("ids", toSchedule.map { it.first }.toSet()).commit()
         toSchedule.forEach { (id, at) ->
             val pi = pending(id, at)
             try {
-                if (exactAllowed()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-                else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                if (exactAllowed()) {
+                    if (alarmClock) {
+                        val showIntent = PendingIntent.getActivity(
+                            context,
+                            0,
+                            Intent(context, MainActivity::class.java),
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        alarms.setAlarmClock(AlarmManager.AlarmClockInfo(at, showIntent), pi)
+                    } else {
+                        alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                    }
+                } else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             } catch (_: SecurityException) {
                 alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             }
@@ -184,6 +199,7 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
             .setSmallIcon(R.drawable.ic_notification).setContentTitle("Мяу! Время позаботиться о себе 🐾")
             .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(listOf(text, phrase).filter { it.isNotEmpty() }.joinToString("\n")))
             .setContentIntent(open).setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setLocalOnly(false)
             .setVisibility(if (settings.privateNotifications) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
             .setPublicVersion(publicVersion)

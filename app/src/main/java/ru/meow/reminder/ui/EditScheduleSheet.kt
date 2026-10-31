@@ -70,15 +70,7 @@ fun EditScheduleSheet(
     var durationChoice by remember(schedule.id) { mutableStateOf(initialDurationAndCustom.first) }
     var customDays by remember(schedule.id) { mutableStateOf(initialDurationAndCustom.second) }
 
-    val initialStartDate = remember(schedule.id) {
-        val parsedStart = runCatching { LocalDate.parse(schedule.startDate) }.getOrNull()
-        val today = LocalDate.now()
-        if (parsedStart != null && parsedStart.isBefore(today)) {
-            today.toString()
-        } else {
-            schedule.startDate
-        }
-    }
+    val initialStartDate = remember(schedule.id) { schedule.startDate }
     var startDate by remember(schedule.id) { mutableStateOf(initialStartDate) }
 
     var saving by remember { mutableStateOf(false) }

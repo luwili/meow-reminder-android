@@ -2,6 +2,7 @@
 package ru.meow.reminder.ui
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -103,6 +104,12 @@ fun SettingsScreen(vm: MeowViewModel) {
             Toggle("Вибрация", settings.vibration) { value -> vm.setting { it.copy(vibration = value) } }
             Toggle("Предпросмотр содержимого", settings.notificationPreview) { value -> vm.setting { it.copy(notificationPreview = value) } }
             Toggle("Скрывать препарат на экране блокировки", settings.privateNotifications) { value -> vm.setting { it.copy(privateNotifications = value) } }
+            var alarmClockMode by remember { mutableStateOf(vm.app.scheduler.isAlarmClockMode()) }
+            Toggle("Режим системного будильника", alarmClockMode, "Использует AlarmClock для гарантированного пробуждения в глубоком сне One UI и Doze (рекомендуется для Samsung)") { value ->
+                alarmClockMode = value
+                vm.app.scheduler.setAlarmClockMode(value)
+                vm.task { vm.app.scheduler.reconcile() }
+            }
             Toggle("Повторы для новых расписаний", settings.repeatDefault, "Для существующих меняются в редакторе расписания") { value -> vm.setting { it.copy(repeatDefault = value) } }
             NumberField(settings.repeatMinutes, "Интервал по умолчанию, минут", 1..1440) { value -> vm.setting { it.copy(repeatMinutes = value) } }
             PermissionCard(vm) { systemNotifications() }
@@ -126,8 +133,48 @@ fun SettingsScreen(vm: MeowViewModel) {
             LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
                 batteryExempt = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
             }
-            Text(if (batteryExempt) "Исключение из стандартной оптимизации Android: включено. Списки сна Samsung нужно проверить отдельно."
-                else "Стандартная оптимизация батареи Android активна. Приложение не может само проверить списки глубокого сна Samsung.", style = MaterialTheme.typography.bodySmall)
+            Text(if (batteryExempt) "Исключение из оптимизации батареи: включено. Приложение защищено от системного засыпания."
+                else "Стандартная оптимизация батареи активна. Samsung может задерживать фоновые напоминания во сне.", style = MaterialTheme.typography.bodySmall)
+            if (!batteryExempt) {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            context.startActivity(intent)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Разрешить работу без ограничений батареи")
+                }
+            }
+            val isSamsung = Build.MANUFACTURER.contains("samsung", ignoreCase = true)
+            if (isSamsung) {
+                OutlinedButton(
+                    onClick = {
+                        val samsungIntents = listOf(
+                            Intent().setComponent(ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity")),
+                            Intent().setComponent(ComponentName("com.samsung.android.sm", "com.samsung.android.sm.ui.battery.BatteryActivity")),
+                            Intent().setComponent(ComponentName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity")),
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                        )
+                        for (it in samsungIntents) {
+                            try {
+                                context.startActivity(it)
+                                break
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Открыть обслуживание устройства Samsung (Батарея)")
+                }
+            }
             OutlinedButton(onClick = {
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
             }) { Text("Открыть параметры приложения") }

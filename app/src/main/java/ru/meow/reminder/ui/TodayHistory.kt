@@ -9,6 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.meow.reminder.data.*
 import java.time.*
@@ -22,24 +24,83 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
     val prefs by vm.settings.collectAsStateWithLifecycle()
     val phrase by vm.homePhrase.collectAsStateWithLifecycle()
     val refreshing by vm.refreshingToday.collectAsStateWithLifecycle()
-    val zone = ZoneId.systemDefault()
-    var today by remember { mutableStateOf(LocalDate.now()) }
+    var zone by remember { mutableStateOf(ZoneId.systemDefault()) }
+    var today by remember { mutableStateOf(LocalDate.now(zone)) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var nowTime by remember { mutableStateOf(LocalTime.now(zone)) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val currentZone = ZoneId.systemDefault()
+        zone = currentZone
+        today = LocalDate.now(currentZone)
+        nowMillis = System.currentTimeMillis()
+        nowTime = LocalTime.now(currentZone)
+        vm.refreshPhrase()
+    }
+
     LaunchedEffect(Unit) {
         vm.refreshPhrase()
-        while (true) { kotlinx.coroutines.delay(30000); today = LocalDate.now() }
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            val currentZone = ZoneId.systemDefault()
+            zone = currentZone
+            today = LocalDate.now(currentZone)
+            nowMillis = System.currentTimeMillis()
+            nowTime = LocalTime.now(currentZone)
+        }
     }
-    val day = doses.filter { Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() == today && (!it.cancelled || it.status != "PENDING") }.sortedBy { it.plannedAt }
-    val next = doses.filter { !it.cancelled && it.status == "PENDING" && it.plannedAt > System.currentTimeMillis() }.minByOrNull { it.plannedAt }
-    val upcomingAfterToday = doses.filter { !it.cancelled && it.status == "PENDING" && Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() > today }.sortedBy { it.plannedAt }.take(5)
+
+    val day = doses.filter {
+        Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() == today &&
+            (!it.cancelled || it.status != "PENDING")
+    }.sortedBy { it.plannedAt }
+
+    val todayPending = day.filter { !it.cancelled && it.status == "PENDING" }
+    val todayOverdue = todayPending.filter { it.plannedAt <= nowMillis }.sortedBy { it.plannedAt }
+    val todayUpcoming = todayPending.filter { it.plannedAt > nowMillis }.sortedBy { it.plannedAt }
+
+    val upcomingAfterToday = doses.filter {
+        !it.cancelled && it.status == "PENDING" &&
+            Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() > today
+    }.sortedBy { it.plannedAt }.take(5)
+
+    val heroDose: DoseOccurrence?
+    val heroSectionTitle: String
+    val isHeroFuture: Boolean
+    if (todayOverdue.isNotEmpty()) {
+        heroDose = todayOverdue.first()
+        heroSectionTitle = "Пора принять"
+        isHeroFuture = false
+    } else if (todayUpcoming.isNotEmpty()) {
+        heroDose = todayUpcoming.first()
+        heroSectionTitle = "Ближайший приём"
+        isHeroFuture = false
+    } else if (upcomingAfterToday.isNotEmpty()) {
+        heroDose = upcomingAfterToday.first()
+        heroSectionTitle = "Следующий приём"
+        isHeroFuture = true
+    } else {
+        heroDose = null
+        heroSectionTitle = "Ближайший приём"
+        isHeroFuture = false
+    }
+
     val activeSchedules = schedules.filter { it.enabled }
-    val greeting = when (LocalTime.now().hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Тихой ночи" }
+    val greeting = when (nowTime.hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Тихой ночи" }
 
     Page("Мяу, пора!", actions = { IconButton(onClick = add) { Icon(Icons.Outlined.Add, "Добавить напоминание") } },
-        refreshing = refreshing, onRefresh = { today = LocalDate.now(); vm.refreshToday() }) {
+        refreshing = refreshing, onRefresh = {
+            val currentZone = ZoneId.systemDefault()
+            zone = currentZone
+            today = LocalDate.now(currentZone)
+            nowMillis = System.currentTimeMillis()
+            nowTime = LocalTime.now(currentZone)
+            vm.refreshToday()
+        }) {
         Text(greeting, style = MaterialTheme.typography.headlineLarge)
         Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.extraLarge) {
             Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (prefs.cat) Cat(Modifier.size(78.dp), sleepy = LocalTime.now().hour < 6)
+                if (prefs.cat) Cat(Modifier.size(78.dp), sleepy = nowTime.hour < 6)
                 Column(Modifier.weight(1f).padding(start = if (prefs.cat) 12.dp else 0.dp)) {
                     Text(if (prefs.phrases && phrase.isNotBlank()) phrase else "В вашем ритме. С заботой о себе.", style = MaterialTheme.typography.titleMedium)
                     Text("Маленькие шаги, тёплые привычки", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
@@ -48,23 +109,26 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
         }
         PermissionCard(vm, settings)
 
-        if (next != null) {
+        if (heroDose != null) {
             var deleteNextDialog by remember { mutableStateOf(false) }
             var snoozeNext by remember { mutableStateOf(false) }
-            Section("Ближайший приём") {
+            var confirmFutureTakeDialog by remember { mutableStateOf(false) }
+            val heroDoseTimeText = Instant.ofEpochMilli(heroDose.plannedAt).atZone(zone).format(dateTimeFormat)
+
+            Section(heroSectionTitle) {
                 Card(
-                    onClick = { if (next.scheduleId.isNotBlank()) editSchedule(next.scheduleId) },
+                    onClick = { if (heroDose.scheduleId.isNotBlank()) editSchedule(heroDose.scheduleId) },
                     modifier = Modifier.fillMaxWidth().testTag("next-dose-card"),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(next.medicationName, style = MaterialTheme.typography.titleMedium)
-                                Text(Instant.ofEpochMilli(next.plannedAt).atZone(zone).format(dateTimeFormat), style = MaterialTheme.typography.bodyMedium)
+                                Text(heroDose.medicationName, style = MaterialTheme.typography.titleMedium)
+                                Text(heroDoseTimeText, style = MaterialTheme.typography.bodyMedium)
                             }
-                            if (next.scheduleId.isNotBlank()) {
-                                IconButton(onClick = { editSchedule(next.scheduleId) }, modifier = Modifier.testTag("edit-next-schedule")) {
+                            if (heroDose.scheduleId.isNotBlank()) {
+                                IconButton(onClick = { editSchedule(heroDose.scheduleId) }, modifier = Modifier.testTag("edit-next-schedule")) {
                                     Icon(Icons.Outlined.Edit, "Редактировать расписание и время", tint = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -73,22 +137,45 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            FilledTonalButton(onClick = { vm.mark(next.id, "TAKEN") }) { Text("Принято") }
+                            FilledTonalButton(onClick = {
+                                if (isHeroFuture) confirmFutureTakeDialog = true
+                                else vm.mark(heroDose.id, "TAKEN")
+                            }) { Text("Принято") }
                             IconButton(onClick = { snoozeNext = true }) { Icon(Icons.Outlined.Snooze, "Отложить") }
-                            TextButton(onClick = { vm.mark(next.id, "SKIPPED") }) { Text("Пропустить") }
+                            TextButton(onClick = { vm.mark(heroDose.id, "SKIPPED") }) { Text("Пропустить") }
                         }
                     }
                 }
             }
-            if (snoozeNext) SnoozeDialog(dismiss = { snoozeNext = false }, select = { minutes -> vm.task { vm.app.scheduler.snooze(next.id, minutes) } })
+            if (confirmFutureTakeDialog) {
+                AlertDialog(
+                    onDismissRequest = { confirmFutureTakeDialog = false },
+                    title = { Text("Принять раньше времени?") },
+                    text = { Text("Этот приём «${heroDose.medicationName}» запланирован на $heroDoseTimeText. Вы уверены, что хотите отметить его принятым сейчас?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            vm.mark(heroDose.id, "TAKEN")
+                            confirmFutureTakeDialog = false
+                        }) {
+                            Text("Принято")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmFutureTakeDialog = false }) {
+                            Text("Отмена")
+                        }
+                    }
+                )
+            }
+            if (snoozeNext) SnoozeDialog(dismiss = { snoozeNext = false }, select = { minutes -> vm.task { vm.app.scheduler.snooze(heroDose.id, minutes) } })
             if (deleteNextDialog) {
                 AlertDialog(
                     onDismissRequest = { deleteNextDialog = false },
                     title = { Text("Удалить напоминание?") },
-                    text = { Text("Удалить напоминание о приёме «${next.medicationName}»?") },
+                    text = { Text("Удалить напоминание о приёме «${heroDose.medicationName}»?") },
                     confirmButton = {
                         TextButton(onClick = {
-                            vm.deleteOccurrence(next.id)
+                            vm.deleteOccurrence(heroDose.id)
                             deleteNextDialog = false
                         }) {
                             Text("Удалить этот приём", color = MaterialTheme.colorScheme.error)
@@ -96,9 +183,9 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
                     },
                     dismissButton = {
                         Row {
-                            if (next.scheduleId.isNotBlank()) {
+                            if (heroDose.scheduleId.isNotBlank()) {
                                 TextButton(onClick = {
-                                    vm.deleteSchedule(next.scheduleId)
+                                    vm.deleteSchedule(heroDose.scheduleId)
                                     deleteNextDialog = false
                                 }) {
                                     Text("Отменить всё расписание")
@@ -187,7 +274,7 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSc
     var snooze by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val pendingPast = dose.status == "PENDING" && dose.plannedAt < System.currentTimeMillis()
-    val status = when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> if (pendingPast) "Не подтверждено" else "Ожидается" }
+    val status = when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> if (pendingPast) "Ожидает приёма" else "Ожидается" }
     val canEditSchedule = !history && dose.scheduleId.isNotBlank() && onEditSchedule != null
     Card(
         onClick = { if (canEditSchedule) onEditSchedule!!(dose.scheduleId) },
@@ -224,7 +311,7 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSc
         }
     }
     if (editing) AlertDialog(onDismissRequest = { editing = false }, title = { Text("Статус приёма") }, text = {
-        Column { listOf("TAKEN" to "Принято", "SKIPPED" to "Пропущено", "PENDING" to "Не подтверждено").forEach { (status, name) ->
+        Column { listOf("TAKEN" to "Принято", "SKIPPED" to "Пропущено", "PENDING" to "Ожидает приёма").forEach { (status, name) ->
             TextButton(onClick = { vm.mark(dose.id, status); editing = false }) { Text(name) }
         } }
     }, confirmButton = { TextButton(onClick = { editing = false }) { Text("Закрыть") } })

@@ -2,7 +2,9 @@ package ru.meow.reminder.data
 
 import androidx.room.withTransaction
 import ru.meow.reminder.domain.ScheduleEngine
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class Repository(val database: MeowDatabase, val settings: SettingsStore) {
     val dao = database.dao()
@@ -17,6 +19,40 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
             }
         }
         settings.update { it.copy(initialized = true) }
+    }
+
+    suspend fun repairAnomalousOccurrences() {
+        val zone = ZoneId.systemDefault()
+        val all = dao.allOccurrences()
+        val anomalous = all.filter { dose ->
+            dose.status == "TAKEN" && dose.confirmedAt != null &&
+                Instant.ofEpochMilli(dose.confirmedAt).atZone(zone).toLocalDate() <
+                Instant.ofEpochMilli(dose.plannedAt).atZone(zone).toLocalDate()
+        }
+        if (anomalous.isEmpty()) return
+        database.withTransaction {
+            for (bad in anomalous) {
+                val confirmedDate = Instant.ofEpochMilli(bad.confirmedAt!!).atZone(zone).toLocalDate()
+                val targetPast = all.find {
+                    it.scheduleId == bad.scheduleId &&
+                        it.id != bad.id &&
+                        it.status == "PENDING" &&
+                        Instant.ofEpochMilli(it.plannedAt).atZone(zone).toLocalDate() == confirmedDate
+                }
+                if (targetPast != null) {
+                    dao.occurrence(targetPast.copy(status = "TAKEN", confirmedAt = bad.confirmedAt))
+                    dao.record(IntakeRecord(occurrenceId = targetPast.id, oldStatus = targetPast.status, status = "TAKEN", changedAt = bad.confirmedAt))
+                }
+                val now = System.currentTimeMillis()
+                dao.occurrence(bad.copy(
+                    status = "PENDING",
+                    confirmedAt = null,
+                    notified = bad.plannedAt < now,
+                    nextAttemptAt = null,
+                    nextAttemptKind = null
+                ))
+            }
+        }
     }
 
     suspend fun saveSchedule(schedule: MedicationSchedule) {

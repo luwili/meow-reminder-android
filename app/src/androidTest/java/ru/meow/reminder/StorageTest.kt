@@ -261,4 +261,50 @@ class StorageTest {
             scheduler.cancelAll()
         }
     }
+    @Test fun repairAnomalousOccurrencesHealsPrematureConfirmationFromPreviousDay() = runBlocking {
+        val zone = ZoneId.systemDefault()
+        val schedId = "repair-test-sched"
+        val med = MedicationTemplate(name = "Тест лечения аномалий", enabled = true)
+        repo.dao.medication(med)
+        val day1Local = LocalDate.now(zone).minusDays(1).atTime(22, 1)
+        val day2Local = LocalDate.now(zone).atTime(22, 1)
+        val day1Planned = day1Local.atZone(zone).toInstant().toEpochMilli()
+        val day2Planned = day2Local.atZone(zone).toInstant().toEpochMilli()
+        val confirmedYesterday = day1Local.plusMinutes(5).atZone(zone).toInstant().toEpochMilli()
+
+        // Dose 1: planned yesterday, left PENDING
+        val dose1 = DoseOccurrence(
+            id = "$schedId@$day1Local",
+            scheduleId = schedId,
+            medicationId = med.id,
+            medicationName = med.name,
+            localDateTime = day1Local.toString(),
+            plannedAt = day1Planned,
+            status = "PENDING"
+        )
+        // Dose 2: planned today, but prematurely marked TAKEN yesterday
+        val dose2 = DoseOccurrence(
+            id = "$schedId@$day2Local",
+            scheduleId = schedId,
+            medicationId = med.id,
+            medicationName = med.name,
+            localDateTime = day2Local.toString(),
+            plannedAt = day2Planned,
+            status = "TAKEN",
+            confirmedAt = confirmedYesterday
+        )
+        repo.dao.occurrence(dose1)
+        repo.dao.occurrence(dose2)
+
+        repo.repairAnomalousOccurrences()
+
+        val updated1 = repo.dao.occurrence(dose1.id)!!
+        val updated2 = repo.dao.occurrence(dose2.id)!!
+
+        assertEquals("TAKEN", updated1.status)
+        assertEquals(confirmedYesterday, updated1.confirmedAt)
+
+        assertEquals("PENDING", updated2.status)
+        assertNull(updated2.confirmedAt)
+    }
 }
