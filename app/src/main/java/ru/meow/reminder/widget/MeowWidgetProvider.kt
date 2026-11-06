@@ -23,9 +23,11 @@ import ru.meow.reminder.data.PhraseLibrary
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.random.Random
 
 class MeowWidgetProvider : AppWidgetProvider() {
 
@@ -33,14 +35,16 @@ class MeowWidgetProvider : AppWidgetProvider() {
         if (intent.action == ACTION_TAKE_DOSE) {
             val id = intent.getStringExtra(EXTRA_OCCURRENCE_ID) ?: return
             val app = context.applicationContext as? MeowApp ?: return
+            val pending = goAsync()
             app.scope.launch {
                 try {
                     app.scheduler.handleNotificationAction(id, "TAKEN")
                 } catch (_: Exception) {
-                    // Fallback to direct repo mark if scheduler is busy
                     app.repository.mark(id, "TAKEN")
+                } finally {
+                    updateAllWidgets(context)
+                    pending.finish()
                 }
-                updateAllWidgets(context)
             }
             return
         }
@@ -48,7 +52,19 @@ class MeowWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        updateAllWidgets(context)
+        val app = context.applicationContext as? MeowApp ?: return
+        val pending = goAsync()
+        app.scope.launch {
+            try {
+                val data = queryWidgetData(app, context)
+                for (id in appWidgetIds) {
+                    val views = buildResponsiveViews(context, appWidgetManager, id, data)
+                    appWidgetManager.updateAppWidget(id, views)
+                }
+            } finally {
+                pending.finish()
+            }
+        }
     }
 
     override fun onAppWidgetOptionsChanged(
@@ -58,10 +74,15 @@ class MeowWidgetProvider : AppWidgetProvider() {
         newOptions: android.os.Bundle
     ) {
         val app = context.applicationContext as? MeowApp ?: return
+        val pending = goAsync()
         app.scope.launch {
-            val data = queryWidgetData(app, context)
-            val views = buildResponsiveViews(context, appWidgetManager, appWidgetId, data)
-            appWidgetManager.updateAppWidget(appWidgetId, views)
+            try {
+                val data = queryWidgetData(app, context)
+                val views = buildResponsiveViews(context, appWidgetManager, appWidgetId, data)
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } finally {
+                pending.finish()
+            }
         }
     }
 
@@ -74,7 +95,7 @@ class MeowWidgetProvider : AppWidgetProvider() {
             val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
             val componentName = ComponentName(context, MeowWidgetProvider::class.java)
             val ids = appWidgetManager.getAppWidgetIds(componentName)
-            if (ids.isEmpty()) return
+            if (ids == null || ids.isEmpty()) return
 
             app.scope.launch {
                 val data = queryWidgetData(app, context)
@@ -114,36 +135,57 @@ class MeowWidgetProvider : AppWidgetProvider() {
             val heroDose: DoseOccurrence?
             val heroBadgeText: String
             val isOverdue: Boolean
+            val canQuickTake: Boolean
 
             when {
                 todayOverdue.isNotEmpty() -> {
                     heroDose = todayOverdue.first()
                     heroBadgeText = context.getString(R.string.widget_badge_due)
                     isOverdue = true
+                    canQuickTake = true
                 }
                 todayUpcoming.isNotEmpty() -> {
                     heroDose = todayUpcoming.first()
                     heroBadgeText = context.getString(R.string.widget_badge_next)
                     isOverdue = false
+                    canQuickTake = true
+                }
+                totalToday > 0 && todayPending.isEmpty() -> {
+                    heroDose = null
+                    heroBadgeText = "Все принято ✨"
+                    isOverdue = false
+                    canQuickTake = false
                 }
                 upcomingAfterToday.isNotEmpty() -> {
                     heroDose = upcomingAfterToday.first()
                     heroBadgeText = context.getString(R.string.widget_badge_future)
                     isOverdue = false
+                    canQuickTake = false
                 }
                 else -> {
                     heroDose = null
                     heroBadgeText = if (totalToday > 0) "Все принято ✨" else "Нет приёмов"
                     isOverdue = false
+                    canQuickTake = false
                 }
             }
 
             val heroMed = heroDose?.let { medications[it.medicationId] }
-            val heroTime = heroDose?.let {
-                try {
-                    LocalDateTime.parse(it.localDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
+            val heroTime = heroDose?.let { dose ->
+                val doseLocal = try {
+                    LocalDateTime.parse(dose.localDateTime)
                 } catch (_: Exception) {
-                    Instant.ofEpochMilli(it.plannedAt).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
+                    Instant.ofEpochMilli(dose.plannedAt).atZone(zone).toLocalDateTime()
+                }
+                val timeStr = doseLocal.format(DateTimeFormatter.ofPattern("HH:mm"))
+                val doseDate = doseLocal.toLocalDate()
+                when {
+                    doseDate == today -> timeStr
+                    doseDate == today.plusDays(1) -> "Завтра, $timeStr"
+                    else -> {
+                        val ruLocale = Locale.forLanguageTag("ru")
+                        "${doseDate.format(DateTimeFormatter.ofPattern("d MMM", ruLocale))}, $timeStr"
+                    }
                 }
             } ?: ""
 
@@ -153,7 +195,9 @@ class MeowWidgetProvider : AppWidgetProvider() {
                 listOf(dosagePart, purposePart).filter { it.isNotBlank() }.joinToString(" · ")
             } else ""
 
-            val upcomingList = dayDoses.filter { it.id != heroDose?.id }.take(3).map {
+            val pendingOther = dayDoses.filter { it.id != heroDose?.id && it.status == "PENDING" }
+            val finishedOther = dayDoses.filter { it.id != heroDose?.id && it.status != "PENDING" }
+            val upcomingList = (pendingOther + finishedOther).take(2).map {
                 it to medications[it.medicationId]
             }
 
@@ -164,9 +208,19 @@ class MeowWidgetProvider : AppWidgetProvider() {
                 today.toString()
             }
 
-            val pickedPhrase = PhraseLibrary.pick(app.repository.settings, phrases).ifEmpty {
-                "Мяу! Не забудь позаботиться о себе 🐾"
+            // Pick a phrase read-only to avoid unnecessary DataStore writes on widget renders
+            val hour = LocalTime.now(zone).hour
+            val phrasePool = (PhraseLibrary.builtIn + phrases).filter {
+                it.category in settings.categories && when (it.category) {
+                    "Доброе утро" -> hour in 5..11
+                    "Доброй ночи" -> hour >= 21 || hour < 5
+                    else -> true
+                }
             }
+            val pickedPhrase = (phrasePool.filter { it.id !in settings.recentPhrases }.ifEmpty { phrasePool })
+                .randomOrNull(Random.Default)?.text?.ifEmpty { null }
+                ?: if (totalToday > 0 && todayPending.isEmpty()) "Все таблетки на сегодня приняты! Мяу 🐾"
+                   else "Мяу! Не забудь позаботиться о себе 🐾"
 
             WidgetData(
                 todayFormatted = dateFormatted,
@@ -178,6 +232,7 @@ class MeowWidgetProvider : AppWidgetProvider() {
                 heroBadgeText = heroBadgeText,
                 heroBadgeIsOverdue = isOverdue,
                 heroDesc = heroDesc,
+                canQuickTake = canQuickTake,
                 upcomingDoses = upcomingList,
                 phrase = pickedPhrase
             )
@@ -263,8 +318,12 @@ class MeowWidgetProvider : AppWidgetProvider() {
                     else if (data.heroBadgeIsOverdue) context.getString(R.string.widget_badge_due)
                     else "Ожидает приёма"
                 )
-                views.setViewVisibility(R.id.widget_compact_action_btn, View.VISIBLE)
-                views.setOnClickPendingIntent(R.id.widget_compact_action_btn, getTakeDosePendingIntent(context, hero.id))
+                if (data.canQuickTake) {
+                    views.setViewVisibility(R.id.widget_compact_action_btn, View.VISIBLE)
+                    views.setOnClickPendingIntent(R.id.widget_compact_action_btn, getTakeDosePendingIntent(context, hero.id))
+                } else {
+                    views.setViewVisibility(R.id.widget_compact_action_btn, View.GONE)
+                }
             } else {
                 views.setTextViewText(
                     R.id.widget_compact_title,
@@ -312,10 +371,22 @@ class MeowWidgetProvider : AppWidgetProvider() {
                     R.id.widget_medium_hero_desc,
                     if (data.heroDesc.isNotBlank()) data.heroDesc else "Запланированный приём"
                 )
-                views.setOnClickPendingIntent(
-                    R.id.widget_medium_hero_action_btn,
-                    getTakeDosePendingIntent(context, hero.id)
-                )
+
+                if (data.canQuickTake) {
+                    views.setTextViewText(R.id.widget_medium_hero_action_text, " Принял")
+                    views.setViewVisibility(R.id.widget_medium_hero_action_icon, View.VISIBLE)
+                    views.setOnClickPendingIntent(
+                        R.id.widget_medium_hero_action_btn,
+                        getTakeDosePendingIntent(context, hero.id)
+                    )
+                } else {
+                    views.setTextViewText(R.id.widget_medium_hero_action_text, " Открыть")
+                    views.setViewVisibility(R.id.widget_medium_hero_action_icon, View.GONE)
+                    views.setOnClickPendingIntent(
+                        R.id.widget_medium_hero_action_btn,
+                        openApp
+                    )
+                }
             } else {
                 views.setViewVisibility(R.id.widget_medium_hero_container, View.GONE)
                 views.setViewVisibility(R.id.widget_medium_empty_container, View.VISIBLE)
@@ -366,24 +437,51 @@ class MeowWidgetProvider : AppWidgetProvider() {
                     R.id.widget_large_hero_dosage,
                     if (data.heroDesc.isNotBlank()) data.heroDesc else "Запланированный приём"
                 )
-                views.setOnClickPendingIntent(
-                    R.id.widget_large_hero_action_btn,
-                    getTakeDosePendingIntent(context, hero.id)
-                )
+
+                if (data.canQuickTake) {
+                    views.setTextViewText(R.id.widget_large_hero_action_text, " Отметить приём")
+                    views.setViewVisibility(R.id.widget_large_hero_action_icon, View.VISIBLE)
+                    views.setOnClickPendingIntent(
+                        R.id.widget_large_hero_action_btn,
+                        getTakeDosePendingIntent(context, hero.id)
+                    )
+                } else {
+                    views.setTextViewText(R.id.widget_large_hero_action_text, " Открыть в приложении")
+                    views.setViewVisibility(R.id.widget_large_hero_action_icon, View.GONE)
+                    views.setOnClickPendingIntent(
+                        R.id.widget_large_hero_action_btn,
+                        openApp
+                    )
+                }
             } else {
                 views.setViewVisibility(R.id.widget_large_hero_box, View.GONE)
                 views.setViewVisibility(R.id.widget_large_all_taken_box, View.VISIBLE)
+
+                views.setTextViewText(
+                    R.id.widget_large_empty_title,
+                    if (data.totalToday > 0) context.getString(R.string.widget_all_done_title)
+                    else context.getString(R.string.widget_no_doses)
+                )
+                views.setTextViewText(
+                    R.id.widget_large_empty_subtitle,
+                    if (data.totalToday > 0) context.getString(R.string.widget_all_taken)
+                    else "Нажмите +, чтобы добавить напоминание"
+                )
             }
 
             // Upcoming list
             val upcoming = data.upcomingDoses
             if (upcoming.isNotEmpty()) {
+                views.setViewVisibility(R.id.widget_large_upcoming_header, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_large_upcoming_empty, View.GONE)
+
                 val (item1, med1) = upcoming[0]
                 views.setViewVisibility(R.id.widget_large_item_1, View.VISIBLE)
                 val time1 = try {
                     LocalDateTime.parse(item1.localDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
-                } catch (_: Exception) { "" }
+                } catch (_: Exception) {
+                    Instant.ofEpochMilli(item1.plannedAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+                }
                 views.setTextViewText(R.id.widget_large_item_1_time, time1)
                 views.setTextViewText(R.id.widget_large_item_1_name, med1?.name ?: item1.medicationName)
                 views.setTextViewText(
@@ -396,7 +494,9 @@ class MeowWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.widget_large_item_2, View.VISIBLE)
                     val time2 = try {
                         LocalDateTime.parse(item2.localDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
-                    } catch (_: Exception) { "" }
+                    } catch (_: Exception) {
+                        Instant.ofEpochMilli(item2.plannedAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+                    }
                     views.setTextViewText(R.id.widget_large_item_2_time, time2)
                     views.setTextViewText(R.id.widget_large_item_2_name, med2?.name ?: item2.medicationName)
                     views.setTextViewText(
@@ -409,7 +509,15 @@ class MeowWidgetProvider : AppWidgetProvider() {
             } else {
                 views.setViewVisibility(R.id.widget_large_item_1, View.GONE)
                 views.setViewVisibility(R.id.widget_large_item_2, View.GONE)
-                views.setViewVisibility(R.id.widget_large_upcoming_empty, View.VISIBLE)
+                if (data.totalToday == 0) {
+                    views.setViewVisibility(R.id.widget_large_upcoming_header, View.GONE)
+                    views.setViewVisibility(R.id.widget_large_upcoming_empty, View.VISIBLE)
+                    views.setTextViewText(R.id.widget_large_upcoming_empty, "Нажмите +, чтобы запланировать приём")
+                } else {
+                    views.setViewVisibility(R.id.widget_large_upcoming_header, View.GONE)
+                    views.setViewVisibility(R.id.widget_large_upcoming_empty, View.VISIBLE)
+                    views.setTextViewText(R.id.widget_large_upcoming_empty, "Больше приёмов не запланировано ✨")
+                }
             }
 
             views.setTextViewText(R.id.widget_large_phrase, data.phrase)
@@ -428,6 +536,7 @@ private data class WidgetData(
     val heroBadgeText: String,
     val heroBadgeIsOverdue: Boolean,
     val heroDesc: String,
+    val canQuickTake: Boolean,
     val upcomingDoses: List<Pair<DoseOccurrence, MedicationTemplate?>>,
     val phrase: String
 )

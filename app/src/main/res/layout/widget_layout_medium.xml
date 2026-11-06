@@ -116,18 +116,22 @@
                 android:orientation="horizontal"
                 android:gravity="center"
                 android:background="@drawable/widget_button_background"
+                android:clickable="true"
+                android:focusable="true"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
                 android:paddingTop="8dp"
                 android:paddingBottom="8dp">
 
                 <ImageView
+                    android:id="@+id/widget_medium_hero_action_icon"
                     android:layout_width="16dp"
                     android:layout_height="16dp"
                     android:src="@drawable/ic_widget_check"
                     android:contentDescription="@string/widget_btn_take" />
 
                 <TextView
+                    android:id="@+id/widget_medium_hero_action_text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text=" Принял"

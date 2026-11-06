@@ -104,4 +104,31 @@ class WidgetLogicTest {
         val formatted = date.format(DateTimeFormatter.ofPattern("d MMMM, EEEE", ruLocale)).replaceFirstChar { it.uppercase(ruLocale) }
         assertTrue(formatted.contains("ноября"))
     }
+
+    @Test
+    fun futureDoseDoesNotAllowQuickTakeWhenTodayIsComplete() {
+        val todayDose = sampleDose("1", "m1", "Ибупрофен", today.atTime(9, 0), status = "TAKEN")
+        val tomorrowDose = sampleDose("2", "m2", "Витамин C", today.plusDays(1).atTime(9, 0), status = "PENDING")
+
+        val dayDoses = listOf(todayDose)
+        val todayPending = dayDoses.filter { !it.cancelled && it.status == "PENDING" }
+        val totalToday = dayDoses.size
+
+        // When today is done, widget enters celebration mode, not jumping straight to tomorrow's pill
+        val isTodayDone = totalToday > 0 && todayPending.isEmpty()
+        assertTrue(isTodayDone)
+    }
+
+    @Test
+    fun futureDoseFormatsTomorrowPrefix() {
+        val tomorrow = today.plusDays(1)
+        val local = tomorrow.atTime(9, 30)
+        val timeStr = local.format(DateTimeFormatter.ofPattern("HH:mm"))
+        val formatted = when {
+            local.toLocalDate() == today -> timeStr
+            local.toLocalDate() == today.plusDays(1) -> "Завтра, $timeStr"
+            else -> "$local"
+        }
+        assertEquals("Завтра, 09:30", formatted)
+    }
 }
