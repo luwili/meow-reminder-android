@@ -27,6 +27,14 @@ fun MeowNavigation(vm: MeowViewModel) {
     var quickAdd by remember { mutableStateOf(false) }
     var quickMedicationId by remember { mutableStateOf<String?>(null) }
     var editingScheduleId by remember { mutableStateOf<String?>(null) }
+    val requestedQuickAdd by vm.quickAddRequested.collectAsStateWithLifecycle()
+    LaunchedEffect(requestedQuickAdd) {
+        if (requestedQuickAdd) {
+            quickMedicationId = null
+            quickAdd = true
+            vm.quickAddRequested.value = false
+        }
+    }
     LaunchedEffect(Unit) { delay(1100); loading = false }
     LaunchedEffect(error) { error?.let { snack.showSnackbar(it); vm.error.value = null } }
     if (loading || !settings.initialized) {

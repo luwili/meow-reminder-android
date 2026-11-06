@@ -54,6 +54,7 @@ class RestoreReceiver : BroadcastReceiver() {
         app.scope.launch {
             try {
                 app.scheduler.reconcile(recoverRecent = true)
+                ru.meow.reminder.widget.MeowWidgetProvider.updateAllWidgets(context)
             } catch (e: Exception) {
                 Log.e("MeowReminder", "Не удалось восстановить расписание", e)
                 WorkManager.getInstance(context).enqueueUniqueWork(

@@ -23,6 +23,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.room.withTransaction
 import ru.meow.reminder.data.*
 import ru.meow.reminder.BuildConfig
+import android.appwidget.AppWidgetManager
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Widgets
+import ru.meow.reminder.widget.MeowWidgetProvider
 import java.time.LocalDate
 
 @Composable
@@ -81,6 +85,32 @@ fun SettingsScreen(vm: MeowViewModel) {
                 listOf("Лаванда", "Роза", "Небо", "Персик").forEachIndexed { i, label -> FilterChip(selected = settings.accent == i, onClick = { vm.setting { it.copy(accent = i) } }, label = { Text(label) }) }
             }
             Toggle("Анимации", settings.animations) { value -> vm.setting { it.copy(animations = value) } }
+        }
+        Section("Виджет для главного экрана") {
+            Text("Следите за приёмами лекарств прямо с экрана «Домой». Виджет адаптируется к размеру сетки (от компактной строки до карточки на весь день) и использует системную палитру Material You.")
+            val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
+            val isPinSupported = remember {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && appWidgetManager != null && appWidgetManager.isRequestPinAppWidgetSupported
+            }
+            if (isPinSupported) {
+                Button(
+                    onClick = {
+                        try {
+                            val provider = ComponentName(context, MeowWidgetProvider::class.java)
+                            appWidgetManager.requestPinAppWidget(provider, null, null)
+                            message = "Виджет отправлен на главный экран"
+                        } catch (_: Exception) {
+                            message = "Добавьте виджет через долгое нажатие на главном экране"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.Widgets, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Закрепить виджет на главном экране")
+                }
+            }
+            Text("Совет: зажмите добавленный виджет на рабочем столе, чтобы изменить размер. В компактном виде он показывает время и кнопку отметки, а в широком и высоком — подробности приёма и список на день.", style = MaterialTheme.typography.bodySmall)
         }
         Section("Котик и фразы") {
             Toggle("Показывать котика", settings.cat) { value -> vm.setting { it.copy(cat = value) } }

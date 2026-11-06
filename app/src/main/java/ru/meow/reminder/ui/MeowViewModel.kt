@@ -23,6 +23,7 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     val refreshingToday = MutableStateFlow(false)
     val quickSaving = MutableStateFlow(false)
     val quickError = MutableStateFlow<String?>(null)
+    val quickAddRequested = MutableStateFlow(false)
     private val operations = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private var repair: Job? = null
     init {

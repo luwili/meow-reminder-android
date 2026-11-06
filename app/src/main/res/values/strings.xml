@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Мяу, пора!</string>
+    <string name="widget_name">Мяу, пора! — Расписание</string>
+    <string name="widget_description">Ближайшие приёмы лекарств, отметка в одно касание и статус на сегодня</string>
+    <string name="widget_btn_take">Принял</string>
+    <string name="widget_badge_due">Пора принять</string>
+    <string name="widget_badge_next">Ближайший</string>
+    <string name="widget_badge_future">Следующий</string>
+    <string name="widget_all_taken">Все таблетки на сегодня приняты! Мяу 🐾</string>
+    <string name="widget_no_doses">Нет запланированных приёмов</string>
+    <string name="widget_all_done_title">Все приёмы выполнены ✨</string>
+    <string name="widget_quick_add_desc">Добавить напоминание</string>
+    <string name="widget_pin_button">Закрепить виджет на главном экране</string>
+    <string name="widget_pin_success">Запрос на добавление виджета отправлен</string>
+    <string name="widget_section_title">Виджет для главного экрана</string>
+    <string name="widget_section_desc">Следите за приёмами лекарств прямо с экрана «Домой». Поддерживаются адаптивное изменение размера и системные цвета Material You.</string>
+</resources>

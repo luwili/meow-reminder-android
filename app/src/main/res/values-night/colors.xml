@@ -1,1 +1,21 @@
-<resources><color name="launch_bg">#19181E</color></resources>
+<resources>
+    <color name="launch_bg">#19181E</color>
+
+    <!-- Widget Fallback Colors (Dark theme, pre-Android 12) -->
+    <color name="widget_bg">#1E1C24</color>
+    <color name="widget_card_bg">#282531</color>
+    <color name="widget_hero_bg">#363044</color>
+    <color name="widget_primary">#CEC0EE</color>
+    <color name="widget_on_primary">#292733</color>
+    <color name="widget_button_bg">#CEC0EE</color>
+    <color name="widget_button_text">#19181E</color>
+    <color name="widget_quick_btn_bg">#363044</color>
+    <color name="widget_quick_btn_icon">#CEC0EE</color>
+    <color name="widget_text_primary">#EAE4EE</color>
+    <color name="widget_text_secondary">#AEA8BA</color>
+    <color name="widget_outline">#403B4D</color>
+    <color name="widget_badge_overdue_bg">#4D2C39</color>
+    <color name="widget_badge_overdue_text">#F5DDE6</color>
+    <color name="widget_badge_ok_bg">#24382B</color>
+    <color name="widget_badge_ok_text">#A3D8AF</color>
+</resources>
