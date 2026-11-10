@@ -26,6 +26,7 @@ fun MeowNavigation(vm: MeowViewModel) {
     var loading by remember { mutableStateOf(true) }
     var quickAdd by remember { mutableStateOf(false) }
     var quickMedicationId by remember { mutableStateOf<String?>(null) }
+    var quickDate by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
     var editingScheduleId by remember { mutableStateOf<String?>(null) }
     val requestedQuickAdd by vm.quickAddRequested.collectAsStateWithLifecycle()
     LaunchedEffect(requestedQuickAdd) {
@@ -57,8 +58,8 @@ fun MeowNavigation(vm: MeowViewModel) {
         }
         return
     }
-    val entries = listOf("today" to "Сегодня", "library" to "Препараты", "notes" to "Заметки", "history" to "История", "settings" to "Настройки")
-    val icons = listOf(Icons.Outlined.Today, Icons.Outlined.Medication, Icons.Outlined.StickyNote2, Icons.Outlined.History, Icons.Outlined.Settings)
+    val entries = listOf("today" to "Сегодня", "calendar" to "Календарь", "library" to "Препараты", "notes" to "Заметки", "history" to "История", "settings" to "Настройки")
+    val icons = listOf(Icons.Outlined.Today, Icons.Outlined.CalendarMonth, Icons.Outlined.Medication, Icons.Outlined.StickyNote2, Icons.Outlined.History, Icons.Outlined.Settings)
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     Scaffold(snackbarHost = { SnackbarHost(snack) }, bottomBar = {
@@ -80,6 +81,7 @@ fun MeowNavigation(vm: MeowViewModel) {
                         editSchedule = { scheduleId -> editingScheduleId = scheduleId }
                     )
                 }
+                composable("calendar") { CalendarScreen(vm, editSchedule = { editingScheduleId = it }, add = { date -> quickMedicationId = null; quickDate = date.toString(); quickAdd = true }) }
                 composable("library") { LibraryScreen(vm, edit = { nav.navigate("med/$it") }) }
                 composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("schedule/{id}") { e -> ScheduleEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
@@ -90,7 +92,7 @@ fun MeowNavigation(vm: MeowViewModel) {
             }
         }
     }
-    if (quickAdd) QuickReminderSheet(vm, quickMedicationId, dismiss = { quickAdd = false }, newMedication = {
+    if (quickAdd) QuickReminderSheet(vm, quickMedicationId, dismiss = { quickAdd = false }, initialDate = quickDate, newMedication = {
         quickAdd = false
         val med = MedicationTemplate()
         vm.save(med)

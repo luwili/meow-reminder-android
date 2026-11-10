@@ -24,14 +24,15 @@ fun QuickReminderSheet(
     initialMedicationId: String?,
     dismiss: () -> Unit,
     newMedication: () -> Unit,
-    editMedication: (String) -> Unit
+    editMedication: (String) -> Unit,
+    initialDate: String = LocalDate.now().toString()
 ) {
     val medications by vm.medications.collectAsStateWithLifecycle()
     val saving by vm.quickSaving.collectAsStateWithLifecycle()
     val error by vm.quickError.collectAsStateWithLifecycle()
     var selectedId by remember { mutableStateOf(initialMedicationId) }
     var search by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var date by remember(initialDate) { mutableStateOf(initialDate) }
     var time by remember { mutableStateOf<String?>(null) }
     // Периодичность: DAILY (interval 1), DAILY_ALT (interval 2), WEEKLY, ONCE
     var periodChoice by remember { mutableStateOf("DAILY") }

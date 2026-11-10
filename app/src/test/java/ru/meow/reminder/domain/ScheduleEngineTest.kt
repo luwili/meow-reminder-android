@@ -10,6 +10,23 @@ class ScheduleEngineTest {
     private fun rule(vararg ignored: String) = MedicationSchedule(id = "rule", medicationId = "med", startDate = "2026-01-01")
     private fun dates(s: MedicationSchedule, n: Int = 5) = ScheduleEngine.localTimes(s).take(n).map { it.toString() }.toList()
 
+    @Test fun occurrencesOnReturnsMatchingDailyTimesForArbitraryFutureDate() {
+        val schedule = rule().copy(frequency = "DAILY", times = "20:00,08:00")
+        assertEquals(listOf("2026-11-11T08:00", "2026-11-11T20:00"), ScheduleEngine.occurrencesOn(schedule, LocalDate.parse("2026-11-11")).map { it.toString() })
+    }
+
+    @Test fun occurrencesOnHonorsWeeklyIntervalAndWeekdays() {
+        val schedule = rule().copy(frequency = "WEEKLY", interval = 2, weekDays = "1,5")
+        assertEquals(emptyList<LocalDateTime>(), ScheduleEngine.occurrencesOn(schedule, LocalDate.parse("2026-01-05")))
+        assertEquals(listOf("2026-01-16T09:00"), ScheduleEngine.occurrencesOn(schedule, LocalDate.parse("2026-01-16")).map { it.toString() })
+    }
+
+    @Test fun occurrencesOnHonorsFiniteCountAndEndDate() {
+        val schedule = rule().copy(frequency = "DAILY", times = "08:00,20:00", maxOccurrences = 3, endDate = "2026-01-03")
+        assertEquals(listOf("2026-01-02T08:00"), ScheduleEngine.occurrencesOn(schedule, LocalDate.parse("2026-01-02")).map { it.toString() })
+        assertEquals(emptyList<LocalDateTime>(), ScheduleEngine.occurrencesOn(schedule, LocalDate.parse("2026-01-03")))
+    }
+
     @Test fun oneTimeHasExactlyOneOccurrence() { assertEquals(listOf("2026-01-01T09:00"), dates(rule())) }
     @Test fun oneTimeSeveralTimesAreSortedAndUnique() { assertEquals(listOf("2026-01-01T08:00", "2026-01-01T20:00"), dates(rule().copy(times = "20:00,08:00,08:00"))) }
     @Test fun dailyEveryTwoDays() { assertEquals(listOf("2026-01-01T09:00", "2026-01-03T09:00", "2026-01-05T09:00"), dates(rule().copy(frequency = "DAILY", interval = 2), 3)) }

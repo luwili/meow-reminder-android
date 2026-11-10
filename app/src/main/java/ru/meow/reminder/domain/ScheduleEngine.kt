@@ -49,6 +49,33 @@ object ScheduleEngine {
         }
     }
 
+    /** Returns all scheduled wall-clock occurrences on [date], without scanning earlier calendar dates. */
+    fun occurrencesOn(s: MedicationSchedule, date: LocalDate): List<LocalDateTime> {
+        validate(s)
+        val start = LocalDate.parse(s.startDate)
+        val end = s.endDate?.let(LocalDate::parse)
+        if (date.isBefore(start) || (end != null && date.isAfter(end))) return emptyList()
+
+        val times = s.times.split(',').map(LocalTime::parse).distinct().sorted()
+        val days = s.weekDays.split(',').map(String::toInt).toSet()
+        val weekAnchor = start.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val matches = when (s.frequency) {
+            "ONCE" -> date == start
+            "DAILY" -> ChronoUnit.DAYS.between(start, date) % s.interval == 0L
+            "WEEKLY" -> date.dayOfWeek.value in days &&
+                ChronoUnit.WEEKS.between(weekAnchor, date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))) % s.interval == 0L
+            "MONTHLY" -> ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(date)) % s.interval == 0L &&
+                date.dayOfMonth == (if (s.lastDay) date.lengthOfMonth() else if (s.skipShortMonth && s.monthDay > date.lengthOfMonth()) -1 else minOf(s.monthDay, date.lengthOfMonth()))
+            else -> false
+        }
+        if (!matches || times.isEmpty()) return emptyList()
+
+        val maxOccurrences = s.maxOccurrences ?: return times.map(date::atTime)
+        // Count prior occurrences only up to the cap; this preserves multi-time count semantics.
+        val priorCount = localTimes(s).takeWhile { it.toLocalDate().isBefore(date) }.count()
+        return if (priorCount >= maxOccurrences) emptyList() else times.take(maxOccurrences - priorCount).map(date::atTime)
+    }
+
     fun next(s: MedicationSchedule, after: Instant, zone: ZoneId, limit: Int = 10): List<ZonedDateTime> =
         localTimes(s).map { it.atZone(zone) }.filter { it.toInstant() > after }.take(limit).toList()
 
