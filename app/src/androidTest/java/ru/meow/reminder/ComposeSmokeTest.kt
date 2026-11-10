@@ -33,16 +33,12 @@ class ComposeSmokeTest {
         compose.onAllNodesWithText("Настройки").onFirst().performClick()
         compose.onNodeWithText("Открыть репозиторий на GitHub").performScrollTo().assertExists()
     }
-    @Test fun nativeApplicationOpensAndHasNotesNavigation() {
-        val title = "Проверка заметки ${System.currentTimeMillis()}"
+    @Test fun notesAreNotExposedInMainNavigation() {
         enterHome()
-        compose.onAllNodesWithText("Заметки").onFirst().performClick()
-        compose.onNodeWithText("Новая заметка").assertExists()
-        compose.onNodeWithText("Новая заметка").performScrollTo().performClick()
-        compose.onNodeWithText("Заголовок").performTextInput(title)
-        compose.onNodeWithText("Ваш текст").performTextInput("Мур, всё сохранено")
-        compose.onNodeWithContentDescription("Назад").performClick()
-        compose.onNodeWithText(title).assertExists()
+        compose.onAllNodesWithText("Заметки").assertCountEquals(0)
+        compose.onNodeWithText("Сегодня").assertExists()
+        compose.onNodeWithText("История").assertExists()
+        compose.onNodeWithText("Настройки").assertExists()
     }
     @Test fun swipingDownOnTodayRefreshesLocalDataAndPhrase() {
         enterHome()

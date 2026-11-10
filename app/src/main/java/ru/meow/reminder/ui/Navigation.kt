@@ -7,6 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,8 +60,8 @@ fun MeowNavigation(vm: MeowViewModel) {
         }
         return
     }
-    val entries = listOf("today" to "Сегодня", "calendar" to "Календарь", "library" to "Препараты", "notes" to "Заметки", "history" to "История", "settings" to "Настройки")
-    val icons = listOf(Icons.Outlined.Today, Icons.Outlined.CalendarMonth, Icons.Outlined.Medication, Icons.Outlined.StickyNote2, Icons.Outlined.History, Icons.Outlined.Settings)
+    val entries = listOf("today" to "Сегодня", "calendar" to "Календарь", "library" to "Препараты", "history" to "История", "settings" to "Настройки")
+    val icons = listOf(Icons.Outlined.Today, Icons.Outlined.CalendarMonth, Icons.Outlined.Medication, Icons.Outlined.History, Icons.Outlined.Settings)
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     Scaffold(snackbarHost = { SnackbarHost(snack) }, bottomBar = {
@@ -72,7 +74,14 @@ fun MeowNavigation(vm: MeowViewModel) {
         }
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
-            NavHost(nav, startDestination = "today") {
+            NavHost(
+                navController = nav,
+                startDestination = "today",
+                enterTransition = { if (settings.animations) slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = tween(220)) + fadeIn(tween(220)) else EnterTransition.None },
+                exitTransition = { if (settings.animations) fadeOut(tween(120)) else ExitTransition.None },
+                popEnterTransition = { if (settings.animations) slideInHorizontally(initialOffsetX = { -it / 8 }, animationSpec = tween(220)) + fadeIn(tween(220)) else EnterTransition.None },
+                popExitTransition = { if (settings.animations) fadeOut(tween(120)) else ExitTransition.None }
+            ) {
                 composable("today") {
                     TodayScreen(
                         vm = vm,
@@ -86,8 +95,6 @@ fun MeowNavigation(vm: MeowViewModel) {
                 composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("schedule/{id}") { e -> ScheduleEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("history") { HistoryScreen(vm) }
-                composable("notes") { NotesScreen(vm, edit = { nav.navigate("note/$it") }) }
-                composable("note/{id}") { e -> NoteEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("settings") { SettingsScreen(vm) }
             }
         }

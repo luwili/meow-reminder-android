@@ -44,10 +44,17 @@ fun CalendarScreen(vm: MeowViewModel, editSchedule: (String) -> Unit, add: (Loca
         month = YearMonth.from(today)
         selected = today
     }
-    val existing = doses.filter { !it.cancelled || it.status != "PENDING" }.groupBy {
-        Instant.ofEpochMilli(it.plannedAt).atZone(zone.value).toLocalDate()
-    }.mapValues { it.value.map { d -> d.medicationId }.toMutableSet() }.toMutableMap()
-    val active = schedules.filter { schedule -> schedule.enabled && meds.any { it.id == schedule.medicationId && it.enabled && !it.archived && !it.deleted } }
+    val dosesByDate = remember(doses, zone.value) {
+        doses.asSequence().filter { !it.cancelled || it.status != "PENDING" }
+            .groupBy { Instant.ofEpochMilli(it.plannedAt).atZone(zone.value).toLocalDate() }
+    }
+    val selectedExisting = dosesByDate[selected].orEmpty()
+    val active = remember(schedules, meds) {
+        val eligibleMedicationIds = meds.asSequence().filter { it.enabled && !it.archived && !it.deleted }
+            .map { it.id }.toHashSet()
+        schedules.filter { it.enabled && it.medicationId in eligibleMedicationIds }
+    }
+    val existing = dosesByDate.mapValues { (_, dayDoses) -> dayDoses.map { it.medicationId }.toMutableSet() }.toMutableMap()
     val first = month.atDay(1).minusDays(1)
     val last = month.atEndOfMonth().plusDays(1)
     active.forEach { schedule ->
@@ -59,12 +66,13 @@ fun CalendarScreen(vm: MeowViewModel, editSchedule: (String) -> Unit, add: (Loca
     val monthStart = month.atDay(1)
     val offset = monthStart.dayOfWeek.value - 1
     val cells = (0 until offset).map { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
-    val selectedExisting = doses.filter { (!it.cancelled || it.status != "PENDING") && Instant.ofEpochMilli(it.plannedAt).atZone(zone.value).toLocalDate() == selected }
+    val existingScheduleTimes = remember(doses) { doses.mapTo(HashSet()) { it.scheduleId to it.plannedAt } }
+    val medicationsById = remember(meds) { meds.associateBy { it.id } }
     val selectedDoses = (selectedExisting + active.flatMap { schedule ->
-        val medication = meds.first { it.id == schedule.medicationId }
+        val medication = medicationsById.getValue(schedule.medicationId)
         ScheduleEngine.occurrencesOn(schedule, selected).mapNotNull { local ->
             val plannedAt = local.atZone(zone.value).toInstant().toEpochMilli()
-            if (doses.any { it.scheduleId == schedule.id && it.plannedAt == plannedAt }) null
+            if ((schedule.id to plannedAt) in existingScheduleTimes) null
             else DoseOccurrence(id = "preview-${schedule.id}-$local", scheduleId = schedule.id, medicationId = medication.id,
                 medicationName = medication.name, localDateTime = local.toString(), plannedAt = plannedAt)
         }
