@@ -28,6 +28,11 @@ class ComposeSmokeTest {
         if (compose.onAllNodesWithText("Начать заботиться о себе").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithText("Начать заботиться о себе").performClick()
         compose.waitUntil(10000) { compose.onAllNodesWithText("Сегодня").fetchSemanticsNodes().isNotEmpty() }
     }
+    @Test fun settingsShowsRepositoryLink() {
+        enterHome()
+        compose.onAllNodesWithText("Настройки").onFirst().performClick()
+        compose.onNodeWithText("Открыть репозиторий на GitHub").performScrollTo().assertExists()
+    }
     @Test fun nativeApplicationOpensAndHasNotesNavigation() {
         val title = "Проверка заметки ${System.currentTimeMillis()}"
         enterHome()

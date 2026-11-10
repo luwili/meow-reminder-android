@@ -38,9 +38,9 @@
 
 ## Получить APK
 
-Актуальная тестовая сборка **1.0.8**: [скачать APK напрямую](https://github.com/luwili/meow-reminder-android/releases/download/v1.0.8-debug/meow-reminder-1.0.8-debug.apk) или [открыть Releases](https://github.com/luwili/meow-reminder-android/releases/tag/v1.0.8-debug). Репозиторий публичный, APK доступен без авторизации. Проверка на физическом Samsung не выполнена.
+Актуальная тестовая сборка **1.0.9**: [скачать APK напрямую](https://github.com/luwili/meow-reminder-android/releases/download/v1.0.9-debug/meow-reminder-1.0.9-debug.apk) или [открыть Releases](https://github.com/luwili/meow-reminder-android/releases/tag/v1.0.9-debug). Репозиторий публичный, APK доступен без авторизации. Проверка на физическом Samsung не выполнена.
 
-APK из Releases 1.0.0–1.0.8 подписаны одним ключом: **новый APK устанавливается поверх старого с сохранением данных**. Новые push/ручные сборки Actions используют ту же подпись; некоторые ранние CI-сборки и APK из pull request могли иметь другой ключ. Перед обновлением рекомендуется резервный экспорт.
+APK из Releases 1.0.0–1.0.9 подписаны одним ключом: **новый APK устанавливается поверх старого с сохранением данных**. Новые push/ручные сборки Actions используют ту же подпись; некоторые ранние CI-сборки и APK из pull request могли иметь другой ключ. Перед обновлением рекомендуется резервный экспорт.
 
 Последующие автоматические сборки: **Actions → Android · APK и тесты → успешный запуск → Artifacts → meow-reminder-debug-apk**. Распакуйте ZIP и установите `app-debug.apk`. Для скачивания артефактов Actions может потребоваться аккаунт GitHub; APK в Releases доступен без входа.
 

@@ -220,6 +220,13 @@ fun SettingsScreen(vm: MeowViewModel) {
             Text("Все записи хранятся локально. Нет рекламы, аналитики, регистрации и передачи медицинских данных. Приложение не запрашивает доступ к интернету.")
             Text("Не является медицинской рекомендацией или системой экстренного оповещения.", style = MaterialTheme.typography.bodySmall)
         }
+        TextButton(onClick = {
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/luwili/meow-reminder-android")))
+            } catch (_: android.content.ActivityNotFoundException) {
+                message = "Не найдено приложение для открытия ссылки"
+            }
+        }) { Text("Открыть репозиторий на GitHub") }
         Text("Мяу, пора! · ${BuildConfig.VERSION_NAME}\nРазработчик L", modifier = Modifier.padding(vertical = 24.dp), style = MaterialTheme.typography.bodySmall)
     }
     if (reset) Confirm("Полностью сбросить приложение?", "Препараты, история, заметки и свои фразы будут удалены. Сначала экспортируйте данные, если они нужны.", { reset = false }) {
