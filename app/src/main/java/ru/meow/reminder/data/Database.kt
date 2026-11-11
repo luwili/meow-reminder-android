@@ -1,6 +1,8 @@
 package ru.meow.reminder.data
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -39,5 +41,14 @@ interface MeowDao {
     @Query("DELETE FROM phrases") suspend fun clearPhrases()
 }
 
-@Database(entities = [MedicationTemplate::class, MedicationSchedule::class, DoseOccurrence::class, IntakeRecord::class, CustomPhrase::class, Note::class], version = 1, exportSchema = true)
+@Database(entities = [MedicationTemplate::class, MedicationSchedule::class, DoseOccurrence::class, IntakeRecord::class, CustomPhrase::class, Note::class], version = 2, exportSchema = true)
 abstract class MeowDatabase : RoomDatabase() { abstract fun dao(): MeowDao }
+
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE medications ADD COLUMN isSyrup INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE schedules ADD COLUMN amount REAL")
+        db.execSQL("ALTER TABLE occurrences ADD COLUMN amount REAL")
+        db.execSQL("ALTER TABLE occurrences ADD COLUMN amountUnit TEXT")
+    }
+}

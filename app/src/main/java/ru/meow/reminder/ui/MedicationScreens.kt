@@ -82,6 +82,8 @@ fun LibraryScreen(vm: MeowViewModel, edit: (String) -> Unit) {
 @Composable
 fun MedicationEditor(vm: MeowViewModel, id: String, back: () -> Unit) {
     val meds by vm.medications.collectAsStateWithLifecycle()
+    val schedules by vm.schedules.collectAsStateWithLifecycle()
+    val occurrences by vm.occurrences.collectAsStateWithLifecycle()
     val original = meds.find { it.id == id }
     if (original == null) { Page("Препарат", back) { Text("Загрузка…") }; return }
     var med by remember(id) { mutableStateOf(original) }
@@ -98,6 +100,14 @@ fun MedicationEditor(vm: MeowViewModel, id: String, back: () -> Unit) {
         Text("Сохраняется автоматически", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Field(med.name, "Название *", { change(med.copy(name = it)) }, supporting = if (med.name.isBlank()) "Укажите название препарата" else null)
         Field(med.purpose, "Для чего принимается", { change(med.copy(purpose = it)) })
+        val formLocked = schedules.any { it.medicationId == id && it.amount != null } || occurrences.any { it.medicationId == id && it.amount != null }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Это сироп")
+                Text(if (formLocked) "Для другой формы создайте новый препарат: существующие приёмы сохраняют единицы." else "Количество сиропа указывается в миллилитрах", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = med.isSyrup, onCheckedChange = { change(med.copy(isSyrup = it)) }, enabled = !formLocked)
+        }
         Field(med.dosage, "Дозировка — по вашему назначению", { change(med.copy(dosage = it)) })
         Field(med.unit, "Единица измерения", { change(med.copy(unit = it)) })
         Field(med.note, "Дополнительная заметка", { change(med.copy(note = it)) }, singleLine = false)

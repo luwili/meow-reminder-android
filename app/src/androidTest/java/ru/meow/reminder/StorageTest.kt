@@ -21,6 +21,71 @@ class StorageTest {
         repo = Repository(db, context.repository.settings)
     }
     @After fun close() { db.close() }
+    @Test fun scheduledAmountIsCapturedWhenMarkedTakenAndLegacyUnknownStaysUnknown() = runBlocking {
+        val med = MedicationTemplate(name = "Сироп", unit = "мл", isSyrup = true, enabled = true)
+        repo.dao.medication(med)
+        val schedule = MedicationSchedule(id = "amount-schedule", medicationId = med.id, amount = 2.5)
+        repo.saveSchedule(schedule)
+        val captured = DoseOccurrence("amount-dose", schedule.id, med.id, med.name, "2026-01-01T09:00", 100,
+            amount = schedule.amount, amountUnit = med.unit)
+        repo.dao.occurrence(captured)
+        repo.mark(captured.id, "TAKEN")
+        assertEquals(2.5, repo.dao.occurrence(captured.id)!!.amount!!, 0.0)
+        assertEquals("мл", repo.dao.occurrence(captured.id)!!.amountUnit)
+
+        val legacyUnknown = DoseOccurrence("legacy-unknown", schedule.id, med.id, med.name, "2025-01-01T09:00", 50)
+        repo.dao.occurrence(legacyUnknown)
+        repo.mark(legacyUnknown.id, "TAKEN")
+        assertNull(repo.dao.occurrence(legacyUnknown.id)!!.amount)
+        assertNull(repo.dao.occurrence(legacyUnknown.id)!!.amountUnit)
+    }
+    @Test fun manualOneOffDoseAndItsQuantitySurviveBackupRestore() = runBlocking {
+        val med = MedicationTemplate(id = "manual-med", name = "Сироп", isSyrup = true)
+        val local = LocalDateTime.now().minusDays(1).withSecond(0).withNano(0)
+        repo.addManualIntake(med, true, local, 3.5)
+        val savedOccurrence = repo.dao.allOccurrences().single()
+        val savedRecords = repo.dao.allRecords().filter { it.occurrenceId == savedOccurrence.id }
+        assertEquals("TAKEN", savedOccurrence.status)
+        assertEquals(3.5, savedOccurrence.amount!!, 0.0)
+        assertEquals("мл", savedOccurrence.amountUnit)
+        assertTrue(savedOccurrence.scheduleId.isBlank())
+        assertEquals(1, savedRecords.size)
+        val backup = repo.backup()
+        repo.importBackup(backup, true)
+        assertEquals(savedOccurrence, repo.dao.occurrence(savedOccurrence.id))
+        assertEquals(savedRecords, repo.dao.allRecords().filter { it.occurrenceId == savedOccurrence.id })
+        assertTrue(repo.dao.allMedications().single().isSyrup)
+    }
+
+    @Test fun futureManualIntakeCannotCreateFalseHistory() = runBlocking {
+        val med = MedicationTemplate(name = "Будущий приём")
+        try {
+            repo.addManualIntake(med, true, LocalDateTime.now().plusDays(1), 1.0)
+            fail("Будущий приём не может быть записан как принятый")
+        } catch (_: IllegalArgumentException) { }
+        assertTrue(repo.dao.allOccurrences().isEmpty())
+        assertTrue(repo.dao.allMedications().isEmpty())
+    }
+
+    @Test fun changingScheduleAmountUpdatesOnlyFuturePendingAndOverrideIsPerDose() = runBlocking {
+        val med = MedicationTemplate(name = "Таблетки")
+        repo.dao.medication(med)
+        val schedule = MedicationSchedule(medicationId = med.id, frequency = "DAILY", amount = 0.5)
+        repo.saveSchedule(schedule)
+        val now = System.currentTimeMillis()
+        val past = DoseOccurrence("past-amount", schedule.id, med.id, med.name, "2025-01-01T09:00", now - 60000, amount = 0.5, amountUnit = "таб.", status = "TAKEN")
+        val future = DoseOccurrence("future-amount", schedule.id, med.id, med.name, "2030-01-01T09:00", now + 60000, amount = 0.5, amountUnit = "таб.")
+        repo.dao.occurrence(past)
+        repo.dao.occurrence(future)
+        repo.saveSchedule(schedule.copy(amount = 2.0))
+        assertEquals(0.5, repo.dao.occurrence(past.id)!!.amount!!, 0.0)
+        assertEquals(2.0, repo.dao.occurrence(future.id)!!.amount!!, 0.0)
+        repo.mark(future.id, "TAKEN", 1.5)
+        assertEquals(1.5, repo.dao.occurrence(future.id)!!.amount!!, 0.0)
+        assertEquals(2.0, repo.dao.allSchedules().single().amount!!, 0.0)
+        assertEquals(0.5, repo.dao.occurrence(past.id)!!.amount!!, 0.0)
+    }
+
     @Test fun confirmationKeepsAuditAndCancelsRetries() = runBlocking {
         val dose = DoseOccurrence("d", "s", "m", "Проверка", "2026-01-01T09:00", 100, nextAttemptAt = 999)
         repo.dao.occurrence(dose)
@@ -34,11 +99,12 @@ class StorageTest {
         val context = ApplicationProvider.getApplicationContext<MeowApp>()
         val med = MedicationTemplate(name = "Тест", enabled = true)
         repo.dao.medication(med)
-        repo.saveSchedule(MedicationSchedule(id = "test-schedule", medicationId = med.id, frequency = "DAILY", times = "23:59"))
+        repo.saveSchedule(MedicationSchedule(id = "test-schedule", medicationId = med.id, frequency = "DAILY", amount = 1.5, times = "23:59"))
         val scheduler = ReminderScheduler(context, repo)
         try {
             scheduler.reconcile()
             val ids = repo.dao.allOccurrences().map { it.id }
+            assertTrue(repo.dao.allOccurrences().filter { it.scheduleId == "test-schedule" }.all { it.amount == 1.5 && it.amountUnit == "таб." })
             scheduler.reconcile()
             assertEquals(ids.toSet(), repo.dao.allOccurrences().map { it.id }.toSet())
             val dose = repo.dao.allOccurrences().first()

@@ -3,6 +3,7 @@ package ru.meow.reminder.data
 import androidx.room.withTransaction
 import ru.meow.reminder.domain.ScheduleEngine
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class Repository(val database: MeowDatabase, val settings: SettingsStore) {
     val dao = database.dao()
@@ -22,13 +23,21 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
 
     suspend fun saveSchedule(schedule: MedicationSchedule) {
         ScheduleEngine.validate(schedule)
+        require(schedule.amount == null || (schedule.amount.isFinite() && schedule.amount > 0)) { "Количество должно быть больше нуля" }
         database.withTransaction {
             val old = dao.allSchedules().find { it.id == schedule.id }
             val sameRule = old != null && old.copy(label = schedule.label,
                 repeatNotification = schedule.repeatNotification, repeatMinutes = schedule.repeatMinutes,
-                extraNotifications = schedule.extraNotifications, generatedThrough = null) == schedule.copy(generatedThrough = null)
+                extraNotifications = schedule.extraNotifications, amount = schedule.amount, generatedThrough = null) == schedule.copy(generatedThrough = null)
             if (sameRule) {
                 dao.schedule(schedule.copy(generatedThrough = old!!.generatedThrough))
+                if (old.amount != schedule.amount) {
+                    val med = dao.allMedications().firstOrNull { it.id == schedule.medicationId }
+                    val unit = if (med?.isSyrup == true) "мл" else "таб."
+                    val now = System.currentTimeMillis()
+                    dao.allOccurrences().filter { it.scheduleId == schedule.id && it.status == "PENDING" && it.plannedAt > now }
+                        .forEach { dao.occurrence(it.copy(amount = schedule.amount, amountUnit = if (schedule.amount != null) unit else null)) }
+                }
                 if (!schedule.repeatNotification && old.repeatNotification) {
                     dao.allOccurrences().filter { it.scheduleId == schedule.id && it.status == "PENDING" && it.nextAttemptKind == "REPEAT" }
                         .forEach { dao.occurrence(it.copy(nextAttemptAt = null, nextAttemptKind = null)) }
@@ -41,16 +50,41 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
         }
     }
 
-    suspend fun mark(id: String, status: String) {
+    suspend fun mark(id: String, status: String, amount: Double? = null) {
         require(status in setOf("PENDING", "TAKEN", "SKIPPED"))
+        require(amount == null || (amount.isFinite() && amount > 0)) { "Количество должно быть больше нуля" }
         database.withTransaction {
             val dose = dao.occurrence(id) ?: return@withTransaction
-            if (dose.status == status) return@withTransaction
+            if (dose.status == status && amount == null) return@withTransaction
             dao.record(IntakeRecord(occurrenceId = id, oldStatus = dose.status, status = status))
             val now = System.currentTimeMillis()
+            val med = dao.allMedications().firstOrNull { it.id == dose.medicationId }
+            val unit = dose.amountUnit ?: if (med?.isSyrup == true) "мл" else "таб."
             dao.occurrence(dose.copy(status = status, confirmedAt = if (status == "PENDING") null else now,
+                amount = if (status == "TAKEN") amount ?: dose.amount else dose.amount,
+                amountUnit = if (amount != null) unit else dose.amountUnit,
                 notified = if (status == "PENDING" && dose.plannedAt > now) false else dose.notified,
                 nextAttemptAt = null, nextAttemptKind = null))
+        }
+    }
+
+    suspend fun addManualIntake(medication: MedicationTemplate, isNew: Boolean, local: LocalDateTime, amount: Double) {
+        require(amount.isFinite() && amount > 0) { "Количество должно быть больше нуля" }
+        require(medication.name.isNotBlank()) { "Укажите название препарата" }
+        require(!local.isAfter(LocalDateTime.now())) { "Нельзя отметить будущий приём как принятый" }
+        database.withTransaction {
+            val med = if (isNew) {
+                require(dao.allMedications().none { it.id == medication.id }) { "Препарат уже существует" }
+                dao.medication(medication)
+                medication
+            } else dao.allMedications().firstOrNull { it.id == medication.id && !it.deleted && !it.archived }
+                ?: throw IllegalArgumentException("Препарат не найден")
+            val now = System.currentTimeMillis()
+            val id = newId()
+            dao.occurrence(DoseOccurrence(id = id, scheduleId = "", medicationId = med.id, medicationName = med.name,
+                localDateTime = local.toString(), plannedAt = local.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                status = "TAKEN", confirmedAt = now, amount = amount, amountUnit = if (med.isSyrup) "мл" else "таб."))
+            dao.record(IntakeRecord(occurrenceId = id, oldStatus = "PENDING", status = "TAKEN", changedAt = now))
         }
     }
 
@@ -83,11 +117,13 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
         local: LocalDateTime,
         frequency: String,
         interval: Int = 1,
-        durationDays: Int? = null
+        durationDays: Int? = null,
+        amount: Double? = null
     ): MedicationSchedule {
         require(frequency in setOf("ONCE", "DAILY", "WEEKLY")) { "Выберите периодичность" }
         require(interval in 1..99) { "Интервал должен быть от 1 до 99" }
         require(durationDays == null || durationDays in 1..3650) { "Количество дней должно быть от 1 до 3650" }
+        require(amount == null || (amount.isFinite() && amount > 0)) { "Количество должно быть больше нуля" }
         require(local.second == 0 && local.nano == 0) { "Выберите время с точностью до минуты" }
         require(local > LocalDateTime.now()) { "Выберите будущее время напоминания" }
         val prefs = settings.get()
@@ -112,6 +148,7 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
             interval = interval,
             startDate = startDate.toString(),
             endDate = endDate,
+            amount = amount,
             times = local.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
             repeatNotification = prefs.repeatDefault,
             repeatMinutes = prefs.repeatMinutes

@@ -35,6 +35,7 @@ fun EditScheduleSheet(
     }
     val med = medications.find { it.id == schedule.medicationId }
     val context = LocalContext.current
+    var amount by remember(schedule.id) { mutableStateOf(schedule.amount?.let(::formatIntakeAmount) ?: "") }
 
     val initialTime = remember(schedule.id) { schedule.times.split(',').firstOrNull() ?: "09:00" }
     var time by remember(schedule.id) { mutableStateOf(initialTime) }
@@ -118,6 +119,9 @@ fun EditScheduleSheet(
                     }
                 }
             }
+
+            IntakeAmountField(amount, { amount = it }, med?.isSyrup == true)
+            Text("Изменения количества относятся только к будущим приёмам; история сохраняется.", style = MaterialTheme.typography.bodySmall)
 
             // 1. Время приёма
             Text("Время приёма", style = MaterialTheme.typography.titleSmall)
@@ -206,7 +210,7 @@ fun EditScheduleSheet(
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
             Button(
-                enabled = !saving && (periodChoice == "ONCE" || durationChoice != "CUSTOM" || (customDays.toIntOrNull() ?: 0) > 0),
+                enabled = !saving && (amount.isBlank() || parseIntakeAmount(amount) != null) && (periodChoice == "ONCE" || durationChoice != "CUSTOM" || (customDays.toIntOrNull() ?: 0) > 0),
                 onClick = {
                     saving = true
                     error = null
@@ -242,6 +246,7 @@ fun EditScheduleSheet(
                         }
 
                         val updated = schedule.copy(
+                            amount = parseIntakeAmount(amount),
                             times = parsedTime.format(timeFormat),
                             frequency = freq,
                             interval = interval,

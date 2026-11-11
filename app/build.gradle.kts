@@ -12,8 +12,8 @@ android {
         applicationId = "ru.meow.reminder"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.1.1"
+        versionCode = 13
+        versionName = "1.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -33,6 +33,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {

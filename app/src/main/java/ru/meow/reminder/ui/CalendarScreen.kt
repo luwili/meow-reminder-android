@@ -1,16 +1,30 @@
 package ru.meow.reminder.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import ru.meow.reminder.data.MedicationTemplate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import androidx.compose.ui.platform.LocalContext
+import android.app.TimePickerDialog
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
@@ -32,8 +46,23 @@ import java.util.Locale
 @Composable
 fun CalendarScreen(vm: MeowViewModel) {
     val doses by vm.occurrences.collectAsStateWithLifecycle()
+    val medications by vm.medications.collectAsStateWithLifecycle()
+    val saving by vm.manualSaving.collectAsStateWithLifecycle()
+    val saveError by vm.manualError.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var colorDialogFor by remember { mutableStateOf<String?>(null) }
+    var manualIntake by remember { mutableStateOf(false) }
+    var selectedMedicationId by remember { mutableStateOf("") }
+    var newMedication by remember { mutableStateOf(false) }
+    var manualName by remember { mutableStateOf("") }
+    var manualDosage by remember { mutableStateOf("") }
+    var manualUnit by remember { mutableStateOf("") }
+    var manualSyrup by remember { mutableStateOf(false) }
+    var manualTime by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var manualAmount by remember { mutableStateOf("") }
+    var manualError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val savedMedications = medications.filter { !it.deleted && !it.archived && it.name.isNotBlank() }
     val zone = remember { mutableStateOf(ZoneId.systemDefault()) }
     var today by remember { mutableStateOf(LocalDate.now(zone.value)) }
     var month by remember { mutableStateOf(YearMonth.from(today)) }
@@ -91,7 +120,21 @@ fun CalendarScreen(vm: MeowViewModel) {
             confirmButton = { TextButton(onClick = { colorDialogFor = null }) { Text("Закрыть") } }
         )
     }
-    Page("Календарь") {
+    Page("Календарь", actions = {
+        IconButton(onClick = {
+            selectedMedicationId = savedMedications.firstOrNull()?.id.orEmpty()
+            newMedication = false
+            manualName = ""
+            manualDosage = ""
+            manualUnit = ""
+            manualSyrup = false
+            manualTime = LocalTime.now().withSecond(0).withNano(0)
+            manualAmount = ""
+            manualError = null
+            vm.manualError.value = null
+            manualIntake = true
+        }) { Icon(Icons.Outlined.Add, "Добавить приём") }
+    }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             IconButton(onClick = { month = month.minusMonths(1) }) { Icon(Icons.Outlined.ChevronLeft, "Предыдущий месяц") }
             Text(month.month.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru")).replaceFirstChar { it.uppercase() } + " ${month.year}", style = MaterialTheme.typography.titleLarge)
@@ -102,7 +145,21 @@ fun CalendarScreen(vm: MeowViewModel) {
                 Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.pointerInput(month) {
+                var drag = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, amount -> drag += amount },
+                    onDragEnd = {
+                        if (drag > 70f) month = month.minusMonths(1)
+                        else if (drag < -70f) month = month.plusMonths(1)
+                        drag = 0f
+                    },
+                    onDragCancel = { drag = 0f }
+                )
+            }
+        ) {
             cells.chunked(7).forEach { week ->
                 val maxDots = week.filterNotNull().maxOfOrNull { date ->
                     byDate[date].orEmpty().filter { it.status == "TAKEN" }.map { it.medicationId }.distinct().size
@@ -158,20 +215,100 @@ fun CalendarScreen(vm: MeowViewModel) {
                 }
             }
         }
-        Text(selected.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("ru"))).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(selected.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("ru"))).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = {
+                selectedMedicationId = savedMedications.firstOrNull()?.id.orEmpty()
+                newMedication = false; manualName = ""; manualDosage = ""; manualUnit = ""; manualSyrup = false
+                manualTime = LocalTime.now().withSecond(0).withNano(0); manualAmount = ""; manualError = null; vm.manualError.value = null; manualIntake = true
+            }) { Icon(Icons.Outlined.Add, "Добавить приём в выбранный день") }
+        }
         if (selectedDoses.isEmpty()) Text("На этот день записей нет", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        selectedDoses.forEach { dose -> CalendarDoseRow(dose, zone.value, now) { id, status -> vm.mark(id, status) } }
+        selectedDoses.forEach { dose ->
+            val medication = medications.firstOrNull { it.id == dose.medicationId }
+            CalendarDoseRow(dose, zone.value, now, medication?.dosage.orEmpty(), medication?.unit.orEmpty()) { id, status -> vm.mark(id, status) }
+        }
+        if (manualIntake) {
+            val selectedMedication = savedMedications.firstOrNull { it.id == selectedMedicationId }
+            val syrup = if (newMedication || savedMedications.isEmpty()) manualSyrup else selectedMedication?.isSyrup ?: false
+            AlertDialog(
+                onDismissRequest = { manualIntake = false },
+                title = { Text("Добавить приём") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(selected.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("ru"))).replaceFirstChar { it.uppercase() })
+                        if (savedMedications.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = !newMedication, onClick = { newMedication = false }, label = { Text("Из сохранённых") })
+                                FilterChip(selected = newMedication, onClick = { newMedication = true }, label = { Text("Новый препарат") })
+                            }
+                        }
+                        if (!newMedication && savedMedications.isNotEmpty()) {
+                            var menu by remember { mutableStateOf(false) }
+                            Box {
+                                OutlinedButton(onClick = { menu = true }) {
+                                    Text(savedMedications.firstOrNull { it.id == selectedMedicationId }?.let { "${it.name} · ${it.dosage} ${it.unit}".trim() } ?: "Выбрать препарат")
+                                }
+                                DropdownMenu(menu, { menu = false }) {
+                                    savedMedications.forEach { med ->
+                                        DropdownMenuItem(text = { Text("${med.name} · ${med.dosage} ${med.unit}".trim()) }, onClick = { selectedMedicationId = med.id; manualSyrup = med.isSyrup; manualUnit = med.unit; manualDosage = med.dosage; menu = false })
+                                    }
+                                }
+                            }
+                        }
+                        if (newMedication || savedMedications.isEmpty()) {
+                            OutlinedTextField(manualName, { manualName = it }, label = { Text("Название препарата *") }, singleLine = true)
+                            OutlinedTextField(manualDosage, { manualDosage = it }, label = { Text("Дозировка") }, singleLine = true)
+                            OutlinedTextField(manualUnit, { manualUnit = it }, label = { Text("Единица дозировки") }, singleLine = true)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Это сироп", modifier = Modifier.weight(1f))
+                                Switch(manualSyrup, { manualSyrup = it })
+                            }
+                        }
+                        val med = savedMedications.firstOrNull { it.id == selectedMedicationId }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Время: ${manualTime.format(DateTimeFormatter.ofPattern("HH:mm"))}", modifier = Modifier.weight(1f))
+                            TextButton(onClick = { TimePickerDialog(context, { _, h, m -> manualTime = LocalTime.of(h, m) }, manualTime.hour, manualTime.minute, true).show() }) { Text("Изменить") }
+                        }
+                        IntakeAmountField(manualAmount, { manualAmount = it }, syrup, required = syrup)
+                        if (syrup && manualAmount.isBlank()) Text("Укажите объём сиропа в миллилитрах", style = MaterialTheme.typography.bodySmall)
+                        manualError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = !saving && (parseIntakeAmount(manualAmount) != null || (!syrup && manualAmount.isBlank())), onClick = {
+                        val useNew = newMedication || savedMedications.isEmpty()
+                        val med = if (useNew) MedicationTemplate(name = manualName.trim(), dosage = manualDosage.trim(), unit = manualUnit.trim(), isSyrup = manualSyrup) else savedMedications.firstOrNull { it.id == selectedMedicationId }
+                        val parsed = if (manualAmount.isBlank() && !syrup) 1.0 else parseIntakeAmount(manualAmount)
+                        when {
+                            med == null -> manualError = "Выберите препарат"
+                            med.name.isBlank() -> manualError = "Укажите название препарата"
+                            parsed == null -> manualError = "Укажите количество больше нуля"
+                            LocalDateTime.of(selected, manualTime).isAfter(LocalDateTime.now()) -> manualError = "Нельзя отметить будущий приём как принятый"
+                            else -> vm.addManualIntake(med, useNew, LocalDateTime.of(selected, manualTime), parsed) { manualIntake = false }
+                        }
+                    }) { Text(if (saving) "Сохраняем…" else "Сохранить") }
+                },
+                dismissButton = { TextButton(onClick = { manualIntake = false }) { Text("Отмена") } }
+            )
+        }
     }
 }
 
 @Composable
-private fun CalendarDoseRow(dose: DoseOccurrence, zone: ZoneId, now: Long, mark: (String, String) -> Unit) {
+private fun CalendarDoseRow(dose: DoseOccurrence, zone: ZoneId, now: Long, dosage: String, unit: String, mark: (String, String) -> Unit) {
     val canMark = dose.plannedAt <= now
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(Instant.ofEpochMilli(dose.plannedAt).atZone(zone).toLocalTime().toString().take(5), style = MaterialTheme.typography.titleMedium)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(dose.medicationName, style = MaterialTheme.typography.titleMedium)
+                if (dosage.isNotBlank()) Text("Дозировка: $dosage $unit".trim(), style = MaterialTheme.typography.bodySmall)
+                if (dose.amount != null) {
+                    val amountLabel = dose.amountUnit?.takeIf { it.isNotBlank() } ?: "шт."
+                    Text("За приём: ${formatIntakeAmount(dose.amount)} $amountLabel", style = MaterialTheme.typography.bodySmall)
+                }
                 Text(when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> "Ожидает" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (canMark) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { mark(dose.id, "TAKEN") }, enabled = dose.status != "TAKEN") { Text("Принято") }

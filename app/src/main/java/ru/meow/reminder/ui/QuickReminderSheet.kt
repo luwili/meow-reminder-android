@@ -39,6 +39,7 @@ fun QuickReminderSheet(
     // Длительность: 3, 5, 7, 10, 14, 30, "FOREVER", "CUSTOM"
     var durationChoice by remember { mutableStateOf("FOREVER") }
     var customDays by remember { mutableStateOf("") }
+    var amount by remember(selectedId) { mutableStateOf("") }
 
     val selected = medications.find { it.id == selectedId && !it.deleted && !it.archived }
     val context = LocalContext.current
@@ -84,6 +85,7 @@ fun QuickReminderSheet(
                     Text("Создать новый препарат")
                 }
             } else {
+                LaunchedEffect(selected.id) { amount = if (selected.isSyrup) "" else "1" }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -102,6 +104,8 @@ fun QuickReminderSheet(
                         }
                     }
                 }
+
+                IntakeAmountField(amount, { amount = it }, selected.isSyrup)
 
                 // 1. Время приёма
                 Text("Время приёма", style = MaterialTheme.typography.titleSmall)
@@ -190,7 +194,7 @@ fun QuickReminderSheet(
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
                 Button(
-                    enabled = time != null && !saving && (periodChoice == "ONCE" || durationChoice != "CUSTOM" || (customDays.toIntOrNull() ?: 0) > 0),
+                    enabled = time != null && parseIntakeAmount(amount) != null && !saving && (periodChoice == "ONCE" || durationChoice != "CUSTOM" || (customDays.toIntOrNull() ?: 0) > 0),
                     onClick = {
                         val parsedTime = LocalTime.parse(time!!)
                         var targetDateTime = LocalDate.parse(date).atTime(parsedTime)
@@ -217,6 +221,7 @@ fun QuickReminderSheet(
                             frequency = freq,
                             interval = interval,
                             durationDays = days,
+                            amount = parseIntakeAmount(amount),
                             complete = dismiss
                         )
                     },

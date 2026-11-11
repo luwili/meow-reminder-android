@@ -62,7 +62,8 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
             val med = medications.getValue(s.medicationId)
             repo.dao.insertOccurrences((generated + next).distinct().map { local ->
                 val at = local.atZone(zone).toInstant().toEpochMilli()
-                DoseOccurrence(ScheduleEngine.occurrenceId(s.id, local), s.id, s.medicationId, med.name, local.toString(), at, notified = at < now)
+                DoseOccurrence(ScheduleEngine.occurrenceId(s.id, local), s.id, s.medicationId, med.name, local.toString(), at,
+                    amount = s.amount, amountUnit = if (s.amount == null) null else if (med.isSyrup) "мл" else "таб.", notified = at < now)
             })
             repo.dao.schedule(s.copy(generatedThrough = horizon.toString()))
         }
@@ -137,12 +138,12 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
         reconcileLocked()
     }
 
-    suspend fun mark(id: String, status: String) = mutex.withLock {
-        markLocked(id, status)
+    suspend fun mark(id: String, status: String, amount: Double? = null) = mutex.withLock {
+        markLocked(id, status, amount)
     }
 
-    private suspend fun markLocked(id: String, status: String) {
-        repo.mark(id, status)
+    private suspend fun markLocked(id: String, status: String, amount: Double? = null) {
+        repo.mark(id, status, amount)
         notifications.cancel(id, 1)
         reconcileLocked()
     }

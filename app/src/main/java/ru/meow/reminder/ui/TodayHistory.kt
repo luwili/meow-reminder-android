@@ -113,6 +113,8 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
             var deleteNextDialog by remember { mutableStateOf(false) }
             var snoozeNext by remember { mutableStateOf(false) }
             var confirmFutureTakeDialog by remember { mutableStateOf(false) }
+            var changeAmount by remember(heroDose.id) { mutableStateOf(false) }
+            var futureAmount by remember(heroDose.id) { mutableStateOf<Double?>(null) }
             val heroDoseTimeText = Instant.ofEpochMilli(heroDose.plannedAt).atZone(zone).format(dateTimeFormat)
 
             Section(heroSectionTitle) {
@@ -126,6 +128,7 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
                             Column(Modifier.weight(1f)) {
                                 Text(heroDose.medicationName, style = MaterialTheme.typography.titleMedium)
                                 Text(heroDoseTimeText, style = MaterialTheme.typography.bodyMedium)
+                                heroDose.amount?.let { Text("${formatIntakeAmount(it)} ${heroDose.amountUnit.orEmpty()}".trim(), style = MaterialTheme.typography.bodySmall) }
                             }
                             if (heroDose.scheduleId.isNotBlank()) {
                                 IconButton(onClick = { editSchedule(heroDose.scheduleId) }, modifier = Modifier.testTag("edit-next-schedule")) {
@@ -141,11 +144,19 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
                                 if (isHeroFuture) confirmFutureTakeDialog = true
                                 else vm.mark(heroDose.id, "TAKEN")
                             }) { Text("Принято") }
+                            TextButton(onClick = { changeAmount = true }) { Text("Количество") }
                             IconButton(onClick = { snoozeNext = true }) { Icon(Icons.Outlined.Snooze, "Отложить") }
                             TextButton(onClick = { vm.mark(heroDose.id, "SKIPPED") }) { Text("Пропустить") }
                         }
                     }
                 }
+            }
+            if (changeAmount) IntakeConfirmationDialog(heroDose, { changeAmount = false }) { value ->
+                if (isHeroFuture) {
+                    futureAmount = value
+                    confirmFutureTakeDialog = true
+                } else vm.mark(heroDose.id, "TAKEN", value)
+                changeAmount = false
             }
             if (confirmFutureTakeDialog) {
                 AlertDialog(
@@ -154,14 +165,15 @@ fun TodayScreen(vm: MeowViewModel, add: () -> Unit, settings: () -> Unit, editSc
                     text = { Text("Этот приём «${heroDose.medicationName}» запланирован на $heroDoseTimeText. Вы уверены, что хотите отметить его принятым сейчас?") },
                     confirmButton = {
                         TextButton(onClick = {
-                            vm.mark(heroDose.id, "TAKEN")
+                            vm.mark(heroDose.id, "TAKEN", futureAmount)
+                            futureAmount = null
                             confirmFutureTakeDialog = false
                         }) {
                             Text("Принято")
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { confirmFutureTakeDialog = false }) {
+                        TextButton(onClick = { confirmFutureTakeDialog = false; futureAmount = null }) {
                             Text("Отмена")
                         }
                     }
@@ -273,6 +285,7 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSc
     var editing by remember { mutableStateOf(false) }
     var snooze by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var changeAmount by remember(dose.id) { mutableStateOf(false) }
     val pendingPast = dose.status == "PENDING" && dose.plannedAt < System.currentTimeMillis()
     val status = when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> if (pendingPast) "Ожидает приёма" else "Ожидается" }
     val canEditSchedule = !history && dose.scheduleId.isNotBlank() && onEditSchedule != null
@@ -300,15 +313,21 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSc
                 }
             }
             Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            dose.amount?.let { Text("${formatIntakeAmount(it)} ${dose.amountUnit.orEmpty()}".trim(), style = MaterialTheme.typography.bodyMedium) }
             dose.confirmedAt?.let { Text("Отметка: ${Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(dateTimeFormat)}", style = MaterialTheme.typography.bodySmall) }
             if (dose.status == "PENDING" && !dose.cancelled && !history) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     FilledTonalButton(onClick = { vm.mark(dose.id, "TAKEN") }) { Text("Принято") }
+                    TextButton(onClick = { changeAmount = true }) { Text("Количество") }
                     IconButton(onClick = { snooze = true }) { Icon(Icons.Outlined.Snooze, "Отложить") }
                     TextButton(onClick = { vm.mark(dose.id, "SKIPPED") }) { Text("Пропустить") }
                 }
             } else TextButton(onClick = { editing = true }) { Text("Изменить отметку") }
         }
+    }
+    if (changeAmount) IntakeConfirmationDialog(dose, { changeAmount = false }) { value ->
+        vm.mark(dose.id, "TAKEN", value)
+        changeAmount = false
     }
     if (editing) AlertDialog(onDismissRequest = { editing = false }, title = { Text("Статус приёма") }, text = {
         Column { listOf("TAKEN" to "Принято", "SKIPPED" to "Пропущено", "PENDING" to "Ожидает приёма").forEach { (status, name) ->
@@ -346,6 +365,18 @@ fun DoseCard(dose: DoseOccurrence, vm: MeowViewModel, history: Boolean, onEditSc
             }
         )
     }
+}
+
+@Composable
+fun IntakeConfirmationDialog(dose: DoseOccurrence, dismiss: () -> Unit, confirm: (Double) -> Unit) {
+    var value by remember(dose.id) { mutableStateOf(dose.amount?.let(::formatIntakeAmount).orEmpty()) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Количество для этого приёма") },
+        text = { IntakeAmountField(value, { value = it }, dose.amountUnit == "мл") },
+        confirmButton = { TextButton(enabled = parseIntakeAmount(value) != null, onClick = { confirm(parseIntakeAmount(value)!!) }) { Text("Принято") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } },
+    )
 }
 
 @Composable

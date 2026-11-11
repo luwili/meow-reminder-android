@@ -2,6 +2,7 @@ package ru.meow.reminder
 
 import android.app.Application
 import androidx.room.Room
+import ru.meow.reminder.data.MIGRATION_1_2
 import androidx.work.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -16,7 +17,9 @@ class MeowApp : Application() {
     lateinit var scheduler: ReminderScheduler
     override fun onCreate() {
         super.onCreate()
-        val db = Room.databaseBuilder(this, MeowDatabase::class.java, "meow.db").build()
+        val db = Room.databaseBuilder(this, MeowDatabase::class.java, "meow.db")
+            .addMigrations(MIGRATION_1_2)
+            .build()
         repository = Repository(db, SettingsStore(this))
         scheduler = ReminderScheduler(this, repository)
         scope.launch {

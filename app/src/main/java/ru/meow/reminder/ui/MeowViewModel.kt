@@ -23,6 +23,8 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     val refreshingToday = MutableStateFlow(false)
     val quickSaving = MutableStateFlow(false)
     val quickError = MutableStateFlow<String?>(null)
+    val manualSaving = MutableStateFlow(false)
+    val manualError = MutableStateFlow<String?>(null)
     val quickAddRequested = MutableStateFlow(false)
     private val operations = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private var repair: Job? = null
@@ -52,12 +54,15 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun save(med: MedicationTemplate) = task {
         val old = repo.dao.allMedications().find { it.id == med.id }
+        if (old != null && old.isSyrup != med.isSyrup) {
+            require(repo.dao.allSchedules().none { it.medicationId == med.id && it.amount != null } && repo.dao.allOccurrences().none { it.medicationId == med.id && it.amount != null }) { "Для другой формы создайте новый препарат" }
+        }
         repo.dao.medication(med)
         if (old?.enabled != med.enabled || old?.archived != med.archived || old?.deleted != med.deleted || old?.name?.isNotBlank() != med.name.isNotBlank()) scheduleRepair()
     }
     fun save(schedule: MedicationSchedule) = task { repo.saveSchedule(schedule); scheduleRepair() }
     fun save(note: Note) = task { repo.dao.note(note.copy(updatedAt = System.currentTimeMillis())) }
-    fun mark(id: String, status: String) = task { app.scheduler.mark(id, status) }
+    fun mark(id: String, status: String, amount: Double? = null) = task { app.scheduler.mark(id, status, amount) }
     fun setting(change: (AppSettings) -> AppSettings) = task { repo.settings.update(change) }
     fun refreshPhrase() = task { homePhrase.value = PhraseLibrary.pick(repo.settings, repo.dao.allPhrases()) }
     fun refreshToday() {
@@ -75,13 +80,14 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
         frequency: String,
         interval: Int = 1,
         durationDays: Int? = null,
+        amount: Double? = null,
         complete: () -> Unit
     ) {
         if (!quickSaving.compareAndSet(false, true)) return
         quickError.value = null
         task {
             try {
-                repo.addQuickReminder(medicationId, local, frequency, interval, durationDays)
+                repo.addQuickReminder(medicationId, local, frequency, interval, durationDays, amount)
                 app.scheduler.reconcile()
                 withContext(Dispatchers.Main) { complete() }
             } catch (e: Exception) {
@@ -92,7 +98,21 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addQuickReminder(medicationId: String, local: java.time.LocalDateTime, frequency: String, complete: () -> Unit) {
-        addQuickReminder(medicationId, local, frequency, 1, null, complete)
+        addQuickReminder(medicationId, local, frequency, 1, null, null, complete)
+    }
+
+    fun addManualIntake(medication: MedicationTemplate, isNew: Boolean, local: java.time.LocalDateTime, amount: Double, complete: () -> Unit) {
+        if (!manualSaving.compareAndSet(false, true)) return
+        manualError.value = null
+        task {
+            try {
+                repo.addManualIntake(medication, isNew, local, amount)
+                withContext(Dispatchers.Main) { complete() }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                manualError.value = if (e is IllegalArgumentException) e.message else "Не удалось сохранить приём. Повторите попытку."
+            } finally { manualSaving.value = false }
+        }
     }
 
     fun deleteOccurrence(id: String) = task {

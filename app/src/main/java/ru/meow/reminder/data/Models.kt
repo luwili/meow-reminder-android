@@ -23,6 +23,7 @@ data class MedicationTemplate(
     val favorite: Boolean = false,
     val archived: Boolean = false,
     val deleted: Boolean = false,
+    val isSyrup: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -35,6 +36,7 @@ data class MedicationSchedule(
     val enabled: Boolean = true,
     val frequency: String = "ONCE",
     val interval: Int = 1,
+    val amount: Double? = null,
     val times: String = "09:00",
     val weekDays: String = "1,2,3,4,5,6,7",
     val monthDay: Int = 1,
@@ -58,6 +60,8 @@ data class DoseOccurrence(
     val medicationName: String,
     val localDateTime: String,
     val plannedAt: Long,
+    val amount: Double? = null,
+    val amountUnit: String? = null,
     val status: String = "PENDING",
     val confirmedAt: Long? = null,
     val notified: Boolean = false,
