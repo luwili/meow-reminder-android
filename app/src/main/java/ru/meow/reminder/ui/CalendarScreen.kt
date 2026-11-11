@@ -1,6 +1,7 @@
 package ru.meow.reminder.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -67,6 +68,11 @@ fun CalendarScreen(vm: MeowViewModel) {
     var today by remember { mutableStateOf(LocalDate.now(zone.value)) }
     var month by remember { mutableStateOf(YearMonth.from(today)) }
     var selected by remember { mutableStateOf(today) }
+    var selectedDates by remember { mutableStateOf(setOf<LocalDate>()) }
+    var deleting by remember { mutableStateOf(false) }
+    var deletingDose by remember { mutableStateOf<DoseOccurrence?>(null) }
+    var amountFor by remember { mutableStateOf<DoseOccurrence?>(null) }
+    var amountText by remember { mutableStateOf("") }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         zone.value = ZoneId.systemDefault()
         today = LocalDate.now(zone.value)
@@ -170,9 +176,9 @@ fun CalendarScreen(vm: MeowViewModel) {
                         Box(Modifier.weight(1f).height(dayHeight), contentAlignment = Alignment.Center) {
                             if (date != null) {
                                 val dayDoses = byDate[date].orEmpty().filter { it.status == "TAKEN" }.distinctBy { it.medicationId }
-                                val isSelected = selected == date
+                                val isSelected = if (selectedDates.isNotEmpty()) date in selectedDates else selected == date
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-                                    modifier = Modifier.fillMaxSize().clickable { selected = date }.testTag("calendar-day-$date")) {
+                                    modifier = Modifier.fillMaxSize().combinedClickable(onClick = { if (selectedDates.isNotEmpty()) selectedDates = if (date in selectedDates) selectedDates - date else selectedDates + date else selected = date }, onLongClick = { selectedDates = if (date in selectedDates) selectedDates - date else selectedDates + date; selected = date }).testTag("calendar-day-$date")) {
                                     Surface(shape = CircleShape, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
                                         contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface) {
                                         Text(date.dayOfMonth.toString(), Modifier.size(36.dp).wrapContentHeight(Alignment.CenterVertically), textAlign = TextAlign.Center,
@@ -224,10 +230,24 @@ fun CalendarScreen(vm: MeowViewModel) {
             }) { Icon(Icons.Outlined.Add, "Добавить приём в выбранный день") }
         }
         if (selectedDoses.isEmpty()) Text("На этот день записей нет", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (selectedDates.isEmpty()) TextButton(onClick = { selectedDates = setOf(selected) }) { Text("Выбрать несколько дней") }
+        if (selectedDates.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Выбрано дней: ${selectedDates.size}", Modifier.weight(1f))
+            TextButton(onClick = { selectedDates = emptySet() }) { Text("Отмена") }
+            TextButton(onClick = { deleting = true }) { Text("Удалить записи") }
+        }
         selectedDoses.forEach { dose ->
             val medication = medications.firstOrNull { it.id == dose.medicationId }
-            CalendarDoseRow(dose, zone.value, now, medication?.dosage.orEmpty(), medication?.unit.orEmpty()) { id, status -> vm.mark(id, status) }
+            CalendarDoseRow(dose, zone.value, now, medication?.dosage.orEmpty(), medication?.unit.orEmpty(), { amountFor = dose; amountText = dose.amount?.toString().orEmpty() }, { deletingDose = dose }) { id, status -> vm.mark(id, status) }
         }
+        deletingDose?.let { dose ->
+            AlertDialog(onDismissRequest = { deletingDose = null }, title = { Text("Удалить запись?") }, text = { Text("Приём «${dose.medicationName}» будет удалён, а его напоминание отменено. Это действие нельзя отменить.") }, confirmButton = { TextButton(onClick = { vm.deleteOccurrences(listOf(dose.id)); deletingDose = null }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = { deletingDose = null }) { Text("Отмена") } })
+        }
+        if (deleting) {
+            val ids = byDate.filterKeys { it in selectedDates }.values.flatten().map { it.id }
+            AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Удалить записи?") }, text = { Text("Удаляются записи выбранных дней, включая запланированные приёмы со статусом «Ожидает». Другие дни не затрагиваются.") }, confirmButton = { TextButton(onClick = { vm.deleteOccurrences(ids); deleting = false; selectedDates = emptySet() }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("Отмена") } })
+        }
+        amountFor?.let { dose -> AlertDialog(onDismissRequest = { amountFor = null }, title = { Text("Изменить количество") }, text = { IntakeAmountField(amountText, { amountText = it }, dose.amountUnit == "мл" || (dose.amountUnit == null && medications.firstOrNull { it.id == dose.medicationId }?.isSyrup == true), required = true) }, confirmButton = { TextButton(enabled = parseIntakeAmount(amountText) != null, onClick = { parseIntakeAmount(amountText)?.let { vm.updateOccurrenceAmount(dose.id, it); amountFor = null } }) { Text("Сохранить") } }, dismissButton = { TextButton(onClick = { amountFor = null }) { Text("Отмена") } }) }
         if (manualIntake) {
             val selectedMedication = savedMedications.firstOrNull { it.id == selectedMedicationId }
             val syrup = if (newMedication || savedMedications.isEmpty()) manualSyrup else selectedMedication?.isSyrup ?: false
@@ -297,7 +317,7 @@ fun CalendarScreen(vm: MeowViewModel) {
 }
 
 @Composable
-private fun CalendarDoseRow(dose: DoseOccurrence, zone: ZoneId, now: Long, dosage: String, unit: String, mark: (String, String) -> Unit) {
+private fun CalendarDoseRow(dose: DoseOccurrence, zone: ZoneId, now: Long, dosage: String, unit: String, onAmount: () -> Unit, onDelete: () -> Unit, mark: (String, String) -> Unit) {
     val canMark = dose.plannedAt <= now
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -309,6 +329,8 @@ private fun CalendarDoseRow(dose: DoseOccurrence, zone: ZoneId, now: Long, dosag
                     val amountLabel = dose.amountUnit?.takeIf { it.isNotBlank() } ?: "шт."
                     Text("За приём: ${formatIntakeAmount(dose.amount)} $amountLabel", style = MaterialTheme.typography.bodySmall)
                 }
+                TextButton(onClick = onAmount) { Text("Изменить количество") }
+                TextButton(onClick = onDelete) { Text("Удалить запись") }
                 Text(when (dose.status) { "TAKEN" -> "Принято"; "SKIPPED" -> "Пропущено"; else -> "Ожидает" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (canMark) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { mark(dose.id, "TAKEN") }, enabled = dose.status != "TAKEN") { Text("Принято") }

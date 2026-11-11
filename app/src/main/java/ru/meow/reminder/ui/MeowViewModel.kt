@@ -63,6 +63,8 @@ class MeowViewModel(application: Application) : AndroidViewModel(application) {
     fun save(schedule: MedicationSchedule) = task { repo.saveSchedule(schedule); scheduleRepair() }
     fun save(note: Note) = task { repo.dao.note(note.copy(updatedAt = System.currentTimeMillis())) }
     fun mark(id: String, status: String, amount: Double? = null) = task { app.scheduler.mark(id, status, amount) }
+    fun updateOccurrenceAmount(id: String, amount: Double) = task { app.scheduler.updateOccurrenceAmount(id, amount) }
+    fun deleteOccurrences(ids: Collection<String>) = task { app.scheduler.deleteCalendarOccurrences(ids) }
     fun setting(change: (AppSettings) -> AppSettings) = task { repo.settings.update(change) }
     fun refreshPhrase() = task { homePhrase.value = PhraseLibrary.pick(repo.settings, repo.dao.allPhrases()) }
     fun refreshToday() {

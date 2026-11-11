@@ -88,6 +88,27 @@ class Repository(val database: MeowDatabase, val settings: SettingsStore) {
         }
     }
 
+    suspend fun updateOccurrenceAmount(id: String, amount: Double) {
+        require(amount.isFinite() && amount > 0) { "Количество должно быть больше нуля" }
+        database.withTransaction {
+            val dose = dao.occurrence(id) ?: return@withTransaction
+            val med = dao.allMedications().firstOrNull { it.id == dose.medicationId }
+            dao.occurrence(dose.copy(amount = amount, amountUnit = dose.amountUnit ?: if (med?.isSyrup == true) "мл" else "таб."))
+        }
+    }
+
+    suspend fun deleteCalendarOccurrences(ids: Collection<String>) {
+        database.withTransaction {
+            ids.distinct().forEach { id ->
+                val dose = dao.occurrence(id) ?: return@forEach
+                dao.deleteRecordsForOccurrence(id)
+                if (dose.scheduleId.isBlank()) dao.deleteOccurrence(id)
+                else dao.occurrence(dose.copy(status = "PENDING", cancelled = true, confirmedAt = null,
+                    amount = null, amountUnit = null, nextAttemptAt = null, nextAttemptKind = null))
+            }
+        }
+    }
+
     suspend fun deleteOccurrence(id: String) {
         database.withTransaction {
             dao.deleteOccurrence(id)

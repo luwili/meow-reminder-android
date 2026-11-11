@@ -21,6 +21,33 @@ class StorageTest {
         repo = Repository(db, context.repository.settings)
     }
     @After fun close() { db.close() }
+    @Test fun editingAmountChangesOnlyTheSelectedOccurrence() = runBlocking {
+        val med = MedicationTemplate(name = "Таблетки")
+        repo.dao.medication(med)
+        val first = DoseOccurrence("edit-one", "", med.id, med.name, "2026-01-01T09:00", 100, status = "TAKEN", amount = 1.0, amountUnit = "таб.")
+        val second = first.copy(id = "edit-two")
+        repo.dao.occurrence(first)
+        repo.dao.occurrence(second)
+        repo.updateOccurrenceAmount(first.id, 1.5)
+        assertEquals(first.copy(amount = 1.5), repo.dao.occurrence(first.id))
+        assertEquals(second, repo.dao.occurrence(second.id))
+        try { repo.updateOccurrenceAmount(first.id, 0.0); fail("Нулевое количество недопустимо") } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun deletingCalendarEntriesKeepsOtherEntriesAndSuppressesRegeneration() = runBlocking {
+        val med = MedicationTemplate(name = "Удаление")
+        repo.dao.medication(med)
+        val scheduled = DoseOccurrence("scheduled-delete", "schedule", med.id, med.name, "2026-01-01T09:00", 100, status = "TAKEN")
+        val manual = scheduled.copy(id = "manual-delete", scheduleId = "")
+        val other = scheduled.copy(id = "keep")
+        listOf(scheduled, manual, other).forEach { repo.dao.occurrence(it); repo.mark(it.id, "SKIPPED") }
+        repo.deleteCalendarOccurrences(listOf(scheduled.id, manual.id))
+        assertNull(repo.dao.occurrence(manual.id))
+        assertTrue(repo.dao.occurrence(scheduled.id)!!.cancelled)
+        assertEquals("PENDING", repo.dao.occurrence(scheduled.id)!!.status)
+        assertNotNull(repo.dao.occurrence(other.id))
+        assertEquals(listOf(other.id), repo.dao.allRecords().map { it.occurrenceId })
+    }
     @Test fun scheduledAmountIsCapturedWhenMarkedTakenAndLegacyUnknownStaysUnknown() = runBlocking {
         val med = MedicationTemplate(name = "Сироп", unit = "мл", isSyrup = true, enabled = true)
         repo.dao.medication(med)

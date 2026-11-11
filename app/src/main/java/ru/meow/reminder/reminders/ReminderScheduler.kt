@@ -142,6 +142,15 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
         markLocked(id, status, amount)
     }
 
+    suspend fun updateOccurrenceAmount(id: String, amount: Double) = mutex.withLock {
+        repo.updateOccurrenceAmount(id, amount)
+    }
+
+    suspend fun deleteCalendarOccurrences(ids: Collection<String>) = mutex.withLock {
+        repo.deleteCalendarOccurrences(ids)
+        reconcileLocked()
+    }
+
     private suspend fun markLocked(id: String, status: String, amount: Double? = null) {
         repo.mark(id, status, amount)
         notifications.cancel(id, 1)

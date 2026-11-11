@@ -10,7 +10,7 @@
 
 ## Для разработки и выпусков
 
-- Каждому новому опубликованному APK присваиваются **новые versionName и больший versionCode** в `app/build.gradle.kts`. 1.0.0 → code 1; 1.0.1 → code 2; 1.0.2 → code 3; 1.0.3 → code 4; 1.0.4 → code 5; 1.0.5 → code 6; 1.0.6 → code 7; 1.0.7 → code 8; 1.0.8 → code 9; 1.0.9 → code 10; 1.1.0 → code 11; 1.1.1 → code 12; 1.1.2 → code 13.
+- Каждому новому опубликованному APK присваиваются **новые versionName и больший versionCode** в `app/build.gradle.kts`. 1.0.0 → code 1; 1.0.1 → code 2; 1.0.2 → code 3; 1.0.3 → code 4; 1.0.4 → code 5; 1.0.5 → code 6; 1.0.6 → code 7; 1.0.7 → code 8; 1.0.8 → code 9; 1.0.9 → code 10; 1.1.0 → code 11; 1.1.1 → code 12; 1.1.2 → code 13; 1.1.3 → code 14.
 - `applicationId` не меняется.
 - Используется постоянный сертификат SHA-256 `e34c11293f9b67a0e1b1203ea52658725682ea92420fad7838f1ffc783667f4b`.
 - Тестовые Releases 1.0.0–1.1.1 используют один локальный debug-ключ. Для совместимости текущей линии его нельзя заменить произвольным новым release-ключом. Это не production/Play App Signing.
