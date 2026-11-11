@@ -112,6 +112,7 @@ data class AppSettings(
     val notificationPreview: Boolean = true,
     val repeatDefault: Boolean = false,
     val repeatMinutes: Int = 10,
+    val medicationCalendarColors: Map<String, Int> = emptyMap(),
 )
 
 @Serializable

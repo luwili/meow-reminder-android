@@ -37,7 +37,6 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
     suspend fun reconcile(recoverRecent: Boolean = true) = mutex.withLock { reconcileLocked(recoverRecent) }
 
     private suspend fun reconcileLocked(recoverRecent: Boolean = true) {
-        repo.repairAnomalousOccurrences()
         val previouslyArmed = alarmPrefs.getStringSet("ids", emptySet()).orEmpty().toSet()
         cancelAlarms()
         val now = System.currentTimeMillis()
@@ -75,10 +74,11 @@ class ReminderScheduler(private val context: Context, private val repo: Reposito
                 continue
             }
             var updated = dose
+
             // Reinterpret only future, untouched doses in the new local zone. History keeps its instant.
-            if (!dose.notified) {
+            if (!updated.notified) {
                 val at = LocalDateTime.parse(dose.localDateTime).atZone(zone).toInstant().toEpochMilli()
-                updated = dose.copy(plannedAt = at)
+                updated = updated.copy(plannedAt = at)
             }
             if (!updated.notified && updated.plannedAt <= now) {
                 if (AlarmRecovery.retainDueAttempt(updated.id in previouslyArmed, updated.plannedAt, now, recoverRecent)) {

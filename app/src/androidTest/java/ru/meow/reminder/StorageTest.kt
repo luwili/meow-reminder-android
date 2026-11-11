@@ -261,50 +261,43 @@ class StorageTest {
             scheduler.cancelAll()
         }
     }
-    @Test fun repairAnomalousOccurrencesHealsPrematureConfirmationFromPreviousDay() = runBlocking {
+    @Test fun reconcilePreservesExplicitFutureTakenOccurrenceAndOtherSavedData() = runBlocking {
         val zone = ZoneId.systemDefault()
-        val schedId = "repair-test-sched"
-        val med = MedicationTemplate(name = "Тест лечения аномалий", enabled = true)
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val schedId = "explicit-future-taken"
+        val med = MedicationTemplate(name = "Явное подтверждение", enabled = true)
         repo.dao.medication(med)
-        val day1Local = LocalDate.now(zone).minusDays(1).atTime(22, 1)
-        val day2Local = LocalDate.now(zone).atTime(22, 1)
-        val day1Planned = day1Local.atZone(zone).toInstant().toEpochMilli()
-        val day2Planned = day2Local.atZone(zone).toInstant().toEpochMilli()
-        val confirmedYesterday = day1Local.plusMinutes(5).atZone(zone).toInstant().toEpochMilli()
+        val local = LocalDateTime.now(zone).plusDays(2).withSecond(0).withNano(0)
+        val schedule = MedicationSchedule(id = schedId, medicationId = med.id, startDate = LocalDate.now(zone).minusDays(1).toString(), times = "22:01")
+        repo.saveSchedule(schedule)
+        val pending = DoseOccurrence("pending-other-date", schedId, med.id, med.name, local.minusDays(1).toString(), local.minusDays(1).atZone(zone).toInstant().toEpochMilli())
+        val confirmed = local.minusDays(1).atZone(zone).toInstant().toEpochMilli()
+        val taken = DoseOccurrence("taken-future", schedId, med.id, med.name, local.toString(), local.atZone(zone).toInstant().toEpochMilli(), status = "TAKEN", confirmedAt = confirmed)
+        repo.dao.occurrence(pending)
+        repo.dao.occurrence(taken)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.reconcile()
+            assertEquals(taken, repo.dao.occurrence(taken.id))
+            assertEquals(pending, repo.dao.occurrence(pending.id))
+            assertTrue(repo.dao.allRecords().isEmpty())
+        } finally { scheduler.cancelAll() }
+    }
 
-        // Dose 1: planned yesterday, left PENDING
-        val dose1 = DoseOccurrence(
-            id = "$schedId@$day1Local",
-            scheduleId = schedId,
-            medicationId = med.id,
-            medicationName = med.name,
-            localDateTime = day1Local.toString(),
-            plannedAt = day1Planned,
-            status = "PENDING"
-        )
-        // Dose 2: planned today, but prematurely marked TAKEN yesterday
-        val dose2 = DoseOccurrence(
-            id = "$schedId@$day2Local",
-            scheduleId = schedId,
-            medicationId = med.id,
-            medicationName = med.name,
-            localDateTime = day2Local.toString(),
-            plannedAt = day2Planned,
-            status = "TAKEN",
-            confirmedAt = confirmedYesterday
-        )
-        repo.dao.occurrence(dose1)
-        repo.dao.occurrence(dose2)
-
-        repo.repairAnomalousOccurrences()
-
-        val updated1 = repo.dao.occurrence(dose1.id)!!
-        val updated2 = repo.dao.occurrence(dose2.id)!!
-
-        assertEquals("TAKEN", updated1.status)
-        assertEquals(confirmedYesterday, updated1.confirmedAt)
-
-        assertEquals("PENDING", updated2.status)
-        assertNull(updated2.confirmedAt)
+    @Test fun restoringFuturePendingRearmsBaseAlarm() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<MeowApp>()
+        val zone = ZoneId.systemDefault()
+        val med = MedicationTemplate(name = "Будущий приём", enabled = true)
+        val schedule = MedicationSchedule(id = "restore-future", medicationId = med.id, startDate = LocalDate.now(zone).toString(), times = "23:59")
+        val local = LocalDateTime.now(zone).plusDays(2).withSecond(0).withNano(0)
+        val dose = DoseOccurrence("restore-future-dose", schedule.id, med.id, med.name, local.toString(), local.atZone(zone).toInstant().toEpochMilli(), status = "TAKEN", notified = true)
+        repo.dao.medication(med)
+        repo.saveSchedule(schedule)
+        repo.dao.occurrence(dose)
+        val scheduler = ReminderScheduler(context, repo)
+        try {
+            scheduler.mark(dose.id, "PENDING")
+            assertFalse(repo.dao.occurrence(dose.id)!!.notified)
+        } finally { scheduler.cancelAll() }
     }
 }

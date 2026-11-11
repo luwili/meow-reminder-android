@@ -90,7 +90,7 @@ fun MeowNavigation(vm: MeowViewModel) {
                         editSchedule = { scheduleId -> editingScheduleId = scheduleId }
                     )
                 }
-                composable("calendar") { CalendarScreen(vm, editSchedule = { editingScheduleId = it }, add = { date -> quickMedicationId = null; quickDate = date.toString(); quickAdd = true }) }
+                composable("calendar") { CalendarScreen(vm) }
                 composable("library") { LibraryScreen(vm, edit = { nav.navigate("med/$it") }) }
                 composable("med/{id}") { e -> MedicationEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }
                 composable("schedule/{id}") { e -> ScheduleEditor(vm, e.arguments!!.getString("id")!!, back = { nav.popBackStack() }) }

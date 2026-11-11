@@ -125,6 +125,8 @@ find("Сегодня")
 stop()
 after, prefs_after = snapshot("after")
 assert before == after, "Содержимое Room изменилось при обновлении"
+if "medicationCalendarColors" not in prefs_before:
+    assert prefs_after.pop("medicationCalendarColors", {}) == {}, "Неожиданные цвета в старых настройках"
 assert prefs_before == prefs_after, "Настройки сбросились при обновлении"
 installed = adb("shell", "dumpsys", "package", package)
 assert "versionName=" + args.expected_version in installed
